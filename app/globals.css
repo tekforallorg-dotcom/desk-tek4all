@@ -1,26 +1,278 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================
+   Tek4All Design System — Monochrome Elegance
+   Palette:
+   - White:      #FFFFFF → oklch(1 0 0)
+   - Black:      #000000 → oklch(0 0 0)
+   - Grey 100:   #B0B0B0 → oklch(0.733 0 0)
+   - Grey 200:   #7D7D7D → oklch(0.556 0 0)
+   - Grey 300:   #4D4D4D → oklch(0.373 0 0)
+   ============================================ */
 
 @theme inline {
+  /* === Core color mappings === */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-t4-alert: var(--t4-alert);
+
+  /* === Tek4All Brand Palette (direct access) === */
+  --color-t4-white: var(--t4-white);
+  --color-t4-black: var(--t4-black);
+  --color-t4-grey-100: var(--t4-grey-100);
+  --color-t4-grey-200: var(--t4-grey-200);
+  --color-t4-grey-300: var(--t4-grey-300);
+
+  /* === Chart colors (monochrome only) === */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* === Sidebar === */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* === Typography === */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* === Border Radius === */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* === Tek4All Brand Palette === */
+  --t4-white: oklch(1 0 0);           /* #FFFFFF */
+  --t4-black: oklch(0 0 0);           /* #000000 */
+  --t4-grey-100: oklch(0.733 0 0);    /* #B0B0B0 - Light Grey */
+  --t4-grey-200: oklch(0.556 0 0);    /* #7D7D7D - Mid Grey */
+  --t4-grey-300: oklch(0.373 0 0);    /* #4D4D4D - Dark Grey */
+  --t4-alert: oklch(0.55 0.22 25);             /* Alert red - for notifications only */
+
+  /* === Base radius === */
+  --radius: 0.75rem;
+
+  /* === shadcn/ui Semantic Tokens (Light Mode) === */
+  --background: oklch(1 0 0);                /* White */
+  --foreground: oklch(0 0 0);                /* Black */
+
+  --card: oklch(1 0 0);                      /* White */
+  --card-foreground: oklch(0 0 0);           /* Black */
+
+  --popover: oklch(1 0 0);                   /* White */
+  --popover-foreground: oklch(0 0 0);        /* Black */
+
+  --primary: oklch(0 0 0);                   /* Black */
+  --primary-foreground: oklch(1 0 0);        /* White */
+
+  --secondary: oklch(0.97 0 0);              /* Near white */
+  --secondary-foreground: oklch(0 0 0);      /* Black */
+
+  --muted: oklch(0.733 0 0);                 /* Light Grey */
+  --muted-foreground: oklch(0.373 0 0);      /* Dark Grey */
+
+  --accent: oklch(0.97 0 0);                 /* Near white */
+  --accent-foreground: oklch(0 0 0);         /* Black */
+
+  --destructive: oklch(0 0 0);               /* Black (no red) */
+  --destructive-foreground: oklch(1 0 0);    /* White */
+
+  --border: oklch(0.733 0 0);                /* Light Grey */
+  --input: oklch(0.733 0 0);                 /* Light Grey */
+  --ring: oklch(0.373 0 0);                  /* Dark Grey */
+
+  /* === Chart Colors (Monochrome) === */
+  --chart-1: oklch(0 0 0);                   /* Black */
+  --chart-2: oklch(0.373 0 0);               /* Dark Grey */
+  --chart-3: oklch(0.556 0 0);               /* Mid Grey */
+  --chart-4: oklch(0.733 0 0);               /* Light Grey */
+  --chart-5: oklch(0.85 0 0);                /* Very Light Grey */
+
+  /* === Sidebar (Monochrome) === */
+  --sidebar: oklch(0.98 0 0);                /* Near white */
+  --sidebar-foreground: oklch(0 0 0);        /* Black */
+  --sidebar-primary: oklch(0 0 0);           /* Black */
+  --sidebar-primary-foreground: oklch(1 0 0);/* White */
+  --sidebar-accent: oklch(0.95 0 0);         /* Light tint */
+  --sidebar-accent-foreground: oklch(0 0 0); /* Black */
+  --sidebar-border: oklch(0.733 0 0);        /* Light Grey */
+  --sidebar-ring: oklch(0.373 0 0);          /* Dark Grey */
+}
+
+.dark {
+  /* === Dark Mode (Inverted Monochrome) === */
+  --background: oklch(0 0 0);                /* Black */
+  --foreground: oklch(1 0 0);                /* White */
+
+  --card: oklch(0.15 0 0);                   /* Near black */
+  --card-foreground: oklch(1 0 0);           /* White */
+
+  --popover: oklch(0.15 0 0);                /* Near black */
+  --popover-foreground: oklch(1 0 0);        /* White */
+
+  --primary: oklch(1 0 0);                   /* White */
+  --primary-foreground: oklch(0 0 0);        /* Black */
+
+  --secondary: oklch(0.2 0 0);               /* Dark */
+  --secondary-foreground: oklch(1 0 0);      /* White */
+
+  --muted: oklch(0.373 0 0);                 /* Dark Grey */
+  --muted-foreground: oklch(0.733 0 0);      /* Light Grey */
+
+  --accent: oklch(0.2 0 0);                  /* Dark */
+  --accent-foreground: oklch(1 0 0);         /* White */
+
+  --destructive: oklch(1 0 0);               /* White */
+  --destructive-foreground: oklch(0 0 0);    /* Black */
+
+  --border: oklch(0.373 0 0);                /* Dark Grey */
+  --input: oklch(0.373 0 0);                 /* Dark Grey */
+  --ring: oklch(0.733 0 0);                  /* Light Grey */
+
+  /* === Chart Colors (Dark Mode) === */
+  --chart-1: oklch(1 0 0);                   /* White */
+  --chart-2: oklch(0.85 0 0);                /* Very Light Grey */
+  --chart-3: oklch(0.733 0 0);               /* Light Grey */
+  --chart-4: oklch(0.556 0 0);               /* Mid Grey */
+  --chart-5: oklch(0.373 0 0);               /* Dark Grey */
+
+  /* === Sidebar (Dark Mode) === */
+  --sidebar: oklch(0.15 0 0);                /* Near black */
+  --sidebar-foreground: oklch(1 0 0);        /* White */
+  --sidebar-primary: oklch(1 0 0);           /* White */
+  --sidebar-primary-foreground: oklch(0 0 0);/* Black */
+  --sidebar-accent: oklch(0.25 0 0);         /* Dark tint */
+  --sidebar-accent-foreground: oklch(1 0 0); /* White */
+  --sidebar-border: oklch(0.373 0 0);        /* Dark Grey */
+  --sidebar-ring: oklch(0.733 0 0);          /* Light Grey */
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ============================================
+   Retro Design Utilities
+   ============================================ */
+
+@layer components {
+  /* Retro card with soft shadow */
+  .retro-card {
+    @apply rounded-2xl border border-border bg-card;
+    box-shadow: 
+      4px 4px 0px 0px oklch(0.733 0 0),
+      8px 8px 24px -8px oklch(0 0 0 / 0.1);
+  }
+
+  /* Retro card hover lift */
+  .retro-card-hover {
+    @apply transition-all duration-200;
+  }
+  .retro-card-hover:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 
+      6px 6px 0px 0px oklch(0.733 0 0),
+      12px 12px 32px -8px oklch(0 0 0 / 0.15);
+  }
+
+  /* Retro button with shadow */
+  .retro-btn {
+    @apply rounded-xl font-medium transition-all duration-150;
+    box-shadow: 3px 3px 0px 0px oklch(0 0 0);
+  }
+  .retro-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0px 0px oklch(0 0 0);
+  }
+  .retro-btn:active {
+    transform: translate(1px, 1px);
+    box-shadow: 2px 2px 0px 0px oklch(0 0 0);
+  }
+
+  /* Retro input */
+  .retro-input {
+    @apply rounded-xl border-2 border-t4-grey-100 bg-background transition-all;
+    box-shadow: inset 2px 2px 4px oklch(0 0 0 / 0.05);
+  }
+  .retro-input:focus {
+    @apply border-t4-black outline-none;
+    box-shadow: 
+      inset 2px 2px 4px oklch(0 0 0 / 0.05),
+      0 0 0 3px oklch(0.733 0 0 / 0.3);
+  }
+
+  /* Retro badge */
+  .retro-badge {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+    box-shadow: 2px 2px 0px 0px oklch(0 0 0 / 0.2);
+  }
+
+  /* Dotted separator (retro touch) */
+  .retro-separator {
+    border-style: dotted;
+    border-color: oklch(0.733 0 0);
+  }
+
+  /* Retro nav item */
+  .retro-nav-item {
+    @apply relative rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150;
+  }
+  .retro-nav-item:hover {
+    @apply bg-t4-grey-100/20;
+  }
+  .retro-nav-item.active {
+    @apply bg-t4-black text-white;
+    box-shadow: 3px 3px 0px 0px oklch(0.556 0 0);
+  }
+}
+
+/* Retro grain texture overlay (subtle) */
+.retro-grain::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  z-index: 9999;
 }
