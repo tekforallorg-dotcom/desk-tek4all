@@ -10,56 +10,197 @@ import {
   Calendar,
   Users,
   Clock,
+  Plus,
+  X,
+  CheckSquare,
+  FolderKanban,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Programme } from "@/lib/types/programme";
 import { PROGRAMME_STATUS_LABELS } from "@/lib/types/programme";
 import { useAuth } from "@/lib/auth";
+
+/* ─── Types ──────────────────────────────────────────────────────────── */
+
+interface ProgrammeMember {
+  id: string;
+  user_id: string;
+  role: string;
+  user: {
+    id: string;
+    full_name: string | null;
+    username: string;
+    email: string;
+  };
+}
+
+interface UserProfile {
+  id: string;
+  full_name: string | null;
+  username: string;
+  email: string;
+}
+
+interface ActivityEntry {
+  id: string;
+  action: string;
+  details: Record<string, string>;
+  created_at: string;
+  user: { full_name: string | null; username: string };
+}
+
+interface TaskSummary {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  due_date: string | null;
+}
+
+/* ─── Audit log helper ───────────────────────────────────────────────── */
+
+async function logAudit(
+  userId: string,
+  action: string,
+  entityType: string,
+  entityId: string,
+  details: Record<string, string> = {}
+) {
+  const supabase = createClient();
+  await supabase.from("audit_logs").insert({
+    user_id: userId,
+    action,
+    entity_type: entityType,
+    entity_id: entityId,
+    details,
+  });
+}
+
+/* ─── Page ───────────────────────────────────────────────────────────── */
 
 export default function ProgrammeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
-  const [programme, setProgramme] = useState<Programme | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const programmeId = params.id as string;
 
+  const [programme, setProgramme] = useState<Programme | null>(null);
+  const [members, setMembers] = useState<ProgrammeMember[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showManageMembers, setShowManageMembers] = useState(false);
+
   useEffect(() => {
-    const fetchProgramme = async () => {
+    const fetchAll = async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
+
+      // 1. Programme
+      const { data: progData, error } = await supabase
         .from("programmes")
         .select("*")
         .eq("id", programmeId)
         .single();
 
-      if (error) {
+      if (error || !progData) {
         console.error("Error fetching programme:", error);
-      } else {
-        setProgramme(data);
+        setIsLoading(false);
+        return;
       }
+      setProgramme(progData);
+
+      // 2. Programme members
+      const { data: memberData } = await supabase
+        .from("programme_members")
+        .select("id, user_id, role")
+        .eq("programme_id", programmeId);
+
+      if (memberData && memberData.length > 0) {
+        const userIds = memberData.map((m) => m.user_id);
+        const { data: usersData } = await supabase
+          .from("profiles")
+          .select("id, full_name, username, email")
+          .in("id", userIds);
+
+        const membersWithUsers = memberData.map((m) => ({
+          id: m.id,
+          user_id: m.user_id,
+          role: m.role || "member",
+          user: usersData?.find((u) => u.id === m.user_id) || {
+            id: m.user_id,
+            full_name: null,
+            username: "",
+            email: "",
+          },
+        }));
+        setMembers(membersWithUsers);
+      }
+
+      // 3. All active users (for add modal)
+      const { data: allUsersData } = await supabase
+        .from("profiles")
+        .select("id, full_name, username, email")
+        .eq("status", "active")
+        .order("full_name");
+      setAllUsers(allUsersData || []);
+
+      // 4. Tasks for this programme
+      const { data: taskData } = await supabase
+        .from("tasks")
+        .select("id, title, status, priority, due_date")
+        .eq("programme_id", programmeId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setTasks(taskData || []);
+
+      // 5. Recent activity from audit_logs for this programme
+      const { data: auditData } = await supabase
+        .from("audit_logs")
+        .select("id, action, details, created_at, user_id")
+        .eq("entity_type", "programme")
+        .eq("entity_id", programmeId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (auditData && auditData.length > 0) {
+        const auditUserIds = [...new Set(auditData.map((a) => a.user_id))];
+        const { data: auditUsers } = await supabase
+          .from("profiles")
+          .select("id, full_name, username")
+          .in("id", auditUserIds);
+
+        const activityWithUsers = auditData.map((a) => ({
+          ...a,
+          details: (a.details as Record<string, string>) || {},
+          user: auditUsers?.find((u) => u.id === a.user_id) || {
+            full_name: null,
+            username: "Unknown",
+          },
+        }));
+        setActivity(activityWithUsers);
+      }
+
       setIsLoading(false);
     };
 
-    fetchProgramme();
+    fetchAll();
   }, [programmeId]);
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this programme?")) return;
+  /* ─── Handlers ─────────────────────────────────────────────────────── */
 
+  const handleDelete = async () => {
+    if (!user?.id || !programme) return;
     setIsDeleting(true);
+
     const supabase = createClient();
 
-    // Log the action
-    await supabase.from("audit_logs").insert({
-      user_id: user?.id,
-      action: "programme_deleted",
-      entity_type: "programme",
-      entity_id: programmeId,
-      details: { name: programme?.name },
+    await logAudit(user.id, "programme_deleted", "programme", programmeId, {
+      name: programme.name,
     });
 
     const { error } = await supabase
@@ -69,7 +210,6 @@ export default function ProgrammeDetailPage() {
 
     if (error) {
       console.error("Error deleting programme:", error);
-      alert("Failed to delete programme");
       setIsDeleting(false);
       return;
     }
@@ -77,14 +217,125 @@ export default function ProgrammeDetailPage() {
     router.push("/programmes");
   };
 
+  const handleAddMember = async (userId: string) => {
+    if (!user?.id || !programme) return;
+    const supabase = createClient();
+
+    const newId = crypto.randomUUID();
+
+    const { error } = await supabase
+      .from("programme_members")
+      .insert({
+        id: newId,
+        programme_id: programmeId,
+        user_id: userId,
+        role: "member",
+      });
+
+    if (error) {
+      console.error("Error adding member:", error.message, error.code, error.details);
+      return;
+    }
+
+    const addedUser = allUsers.find((u) => u.id === userId);
+    if (addedUser) {
+      setMembers([
+        ...members,
+        {
+          id: newId,
+          user_id: userId,
+          role: "member",
+          user: addedUser,
+        },
+      ]);
+    }
+
+    await logAudit(user.id, "programme_member_added", "programme", programmeId, {
+      name: programme.name,
+      member_name: addedUser?.full_name || addedUser?.username || "",
+    });
+
+    setShowManageMembers(false);
+  };
+
+  const handleRemoveMember = async (memberId: string, memberUser: ProgrammeMember["user"]) => {
+    if (!user?.id || !programme) return;
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("programme_members")
+      .delete()
+      .eq("id", memberId);
+
+    if (error) {
+      console.error("Error removing member:", error);
+      return;
+    }
+
+    setMembers(members.filter((m) => m.id !== memberId));
+
+    await logAudit(user.id, "programme_member_removed", "programme", programmeId, {
+      name: programme.name,
+      member_name: memberUser.full_name || memberUser.username,
+    });
+  };
+
+  /* ─── Helpers ──────────────────────────────────────────────────────── */
+
   const formatDate = (date: string | null) => {
-    if (!date) return "—";
+    if (!date) return "--";
     return new Date(date).toLocaleDateString("en-GB", {
       day: "numeric",
       month: "long",
       year: "numeric",
     });
   };
+
+  const formatTime = (date: string) => {
+    return new Date(date).toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getInitials = (name: string | null, fallback: string) => {
+    if (name) {
+      return name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return fallback.slice(0, 2).toUpperCase();
+  };
+
+  const getActionLabel = (action: string): string => {
+    const map: Record<string, string> = {
+      programme_created: "created this programme",
+      programme_updated: "updated this programme",
+      programme_deleted: "deleted this programme",
+      programme_member_added: "added a team member",
+      programme_member_removed: "removed a team member",
+    };
+    return map[action] || action.replace(/_/g, " ");
+  };
+
+  const availableUsers = allUsers.filter(
+    (u) => !members.some((m) => m.user_id === u.id)
+  );
+
+  const taskStats = {
+    total: tasks.length,
+    done: tasks.filter((t) => t.status === "done" || t.status === "completed").length,
+    overdue: tasks.filter(
+      (t) => t.due_date && new Date(t.due_date) < new Date() && t.status !== "done" && t.status !== "completed"
+    ).length,
+  };
+
+  /* ─── Loading ──────────────────────────────────────────────────────── */
 
   if (isLoading) {
     return (
@@ -97,7 +348,7 @@ export default function ProgrammeDetailPage() {
 
   if (!programme) {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center">
+      <div className="flex min-h-400px flex-col items-center justify-center">
         <h2 className="text-xl font-bold">Programme not found</h2>
         <Link href="/programmes" className="mt-4">
           <Button variant="outline" className="border-2 shadow-retro-sm">
@@ -160,12 +411,12 @@ export default function ProgrammeDetailPage() {
           </Link>
           <Button
             variant="outline"
-            onClick={handleDelete}
+            onClick={() => setShowDeleteConfirm(true)}
             disabled={isDeleting}
             className="border-2 text-red-500 shadow-retro-sm hover:bg-red-50"
           >
             <Trash2 className="mr-2 h-4 w-4" strokeWidth={1.5} />
-            {isDeleting ? "Deleting..." : "Delete"}
+            Delete
           </Button>
         </div>
       </div>
@@ -180,20 +431,141 @@ export default function ProgrammeDetailPage() {
               <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
               Description
             </h2>
-            <p className="mt-4 text-muted-foreground">
+            <p className="mt-4 whitespace-pre-wrap text-muted-foreground">
               {programme.description || "No description provided."}
             </p>
           </div>
 
-          {/* Activity (placeholder) */}
+          {/* Tasks Summary */}
+          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
+                <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
+                Tasks
+              </h2>
+              <Link href={`/tasks?programme=${programmeId}`}>
+                <Button variant="outline" size="sm" className="border-2 text-xs">
+                  View All
+                </Button>
+              </Link>
+            </div>
+
+            {tasks.length === 0 ? (
+              <p className="mt-4 font-mono text-sm text-muted-foreground">
+                No tasks linked to this programme yet.
+              </p>
+            ) : (
+              <>
+                {/* Task stats bar */}
+                <div className="mt-4 flex items-center gap-4">
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {taskStats.done}/{taskStats.total} done
+                  </span>
+                  {taskStats.overdue > 0 && (
+                    <span className="font-mono text-xs text-red-500">
+                      {taskStats.overdue} overdue
+                    </span>
+                  )}
+                  <div className="flex-1">
+                    <div className="h-2 overflow-hidden rounded-full border border-border bg-muted">
+                      <div
+                        className="h-full rounded-full bg-foreground transition-all"
+                        style={{
+                          width: `${taskStats.total > 0 ? (taskStats.done / taskStats.total) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Task list */}
+                <div className="mt-4 space-y-2">
+                  {tasks.slice(0, 5).map((task) => {
+                    const isOverdue =
+                      task.due_date &&
+                      new Date(task.due_date) < new Date() &&
+                      task.status !== "done" &&
+                      task.status !== "completed";
+                    return (
+                      <Link key={task.id} href={`/tasks/${task.id}`}>
+                        <div className="flex items-center gap-3 rounded-lg border border-border p-3 transition-all hover:border-foreground">
+                          <div
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                              task.status === "done" || task.status === "completed"
+                                ? "border-foreground bg-foreground"
+                                : "border-border bg-background"
+                            }`}
+                          >
+                            {(task.status === "done" || task.status === "completed") && (
+                              <CheckSquare className="h-3 w-3 text-background" strokeWidth={2} />
+                            )}
+                          </div>
+                          <span
+                            className={`flex-1 truncate text-sm ${
+                              task.status === "done" || task.status === "completed"
+                                ? "line-through opacity-60"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                          {isOverdue && (
+                            <span className="shrink-0 font-mono text-[10px] text-red-500">
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Recent Activity */}
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
               <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
               Recent Activity
             </h2>
-            <p className="mt-4 font-mono text-sm text-muted-foreground">
-              No activity yet.
-            </p>
+
+            {activity.length === 0 ? (
+              <p className="mt-4 font-mono text-sm text-muted-foreground">
+                No activity yet.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {activity.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-start gap-3 border-b border-border pb-3 last:border-0"
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-muted font-mono text-[10px]">
+                      {getInitials(entry.user.full_name, entry.user.username)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        <span className="font-medium">
+                          {entry.user.full_name || entry.user.username}
+                        </span>{" "}
+                        <span className="text-muted-foreground">
+                          {getActionLabel(entry.action)}
+                        </span>
+                        {entry.details?.member_name && (
+                          <span className="font-medium">
+                            {" "}{entry.details.member_name}
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {formatTime(entry.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -223,6 +595,15 @@ export default function ProgrammeDetailPage() {
               </div>
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <FolderKanban className="h-4 w-4" strokeWidth={1.5} />
+                  Tasks
+                </dt>
+                <dd className="font-mono text-sm font-medium">
+                  {taskStats.total}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4" strokeWidth={1.5} />
                   Last Updated
                 </dt>
@@ -236,22 +617,129 @@ export default function ProgrammeDetailPage() {
           {/* Team */}
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-card-foreground">Team</h2>
+              <h2 className="text-lg font-bold text-card-foreground">
+                Team
+                {members.length > 0 && (
+                  <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+                    ({members.length})
+                  </span>
+                )}
+              </h2>
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setShowManageMembers(true)}
                 className="border-2 text-xs shadow-retro-sm"
               >
                 <Users className="mr-1 h-3 w-3" strokeWidth={1.5} />
                 Manage
               </Button>
             </div>
-            <p className="mt-4 font-mono text-sm text-muted-foreground">
-              No team members assigned yet.
-            </p>
+
+            {members.length === 0 ? (
+              <p className="mt-4 font-mono text-sm text-muted-foreground">
+                No team members assigned yet.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {members.map((member) => (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between rounded-lg border border-border p-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-muted font-mono text-[10px]">
+                        {getInitials(member.user.full_name, member.user.username)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {member.user.full_name || member.user.username}
+                        </p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
+                          {member.role}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveMember(member.id, member.user)}
+                      className="rounded p-1 text-muted-foreground transition-colors hover:text-red-500"
+                      title="Remove member"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Delete Confirm */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Delete Programme?"
+        description="This action cannot be undone. The programme and all related data will be permanently removed."
+        confirmText="Delete"
+        variant="danger"
+        isLoading={isDeleting}
+      />
+
+      {/* Add Member Modal */}
+      {showManageMembers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-foreground/60"
+            onClick={() => setShowManageMembers(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
+            <h2 className="text-xl font-bold">Add Team Member</h2>
+            <p className="mt-1 font-mono text-sm text-muted-foreground">
+              Select someone to add to {programme.name}.
+            </p>
+
+            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+              {availableUsers.length === 0 ? (
+                <p className="py-4 text-center font-mono text-sm text-muted-foreground">
+                  All team members have been added.
+                </p>
+              ) : (
+                availableUsers.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => handleAddMember(u.id)}
+                    className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-left transition-all hover:border-foreground"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
+                      {getInitials(u.full_name, u.username)}
+                    </div>
+                    <div>
+                      <p className="font-medium">
+                        {u.full_name || u.username}
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {u.email}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowManageMembers(false)}
+                className="border-2"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

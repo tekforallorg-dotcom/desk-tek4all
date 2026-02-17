@@ -276,3 +276,35 @@
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   z-index: 9999;
 }
+
+/* ============================================
+   PDF Export Capture Styles
+   Applied when body has .pdf-capture-active class
+   Used by html2canvas to render clean PDF output
+   ============================================ */
+
+/* Show the PDF-only header during capture */
+.pdf-capture-active .pdf-only-header {
+  display: block !important;
+}
+
+/* Flatten shadows and transforms for clean capture */
+.pdf-capture-active [class*="shadow-retro"] {
+  box-shadow: none !important;
+}
+
+.pdf-capture-active [class*="hover:"] {
+  transform: none !important;
+}
+
+/* Ensure white background throughout */
+.pdf-capture-active #analytics-report {
+  background-color: #ffffff !important;
+  padding: 16px !important;
+}
+
+/* Make cards slightly more compact for PDF */
+.pdf-capture-active #analytics-report .rounded-2xl {
+  border-color: #B0B0B0 !important;
+  box-shadow: none !important;
+}

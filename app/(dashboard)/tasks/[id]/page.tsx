@@ -79,6 +79,28 @@ const PRIORITY_COLORS: Record<string, string> = {
   urgent: "bg-red-100 text-red-700 border-red-200",
 };
 
+// ─── Audit log helper ────────────────────────────────────────────────────────
+// Writes to audit_logs so events show in Activity Stream + Control Tower
+async function logAudit(
+  userId: string,
+  action: string,
+  entityType: string,
+  entityId: string,
+  details: Record<string, string> = {}
+) {
+  const supabase = createClient();
+  const { error } = await supabase.from("audit_logs").insert({
+    user_id: userId,
+    action,
+    entity_type: entityType,
+    entity_id: entityId,
+    details,
+  });
+  if (error) {
+    console.error("[audit_log] Failed to log:", action, error);
+  }
+}
+
 export default function TaskDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -103,46 +125,38 @@ export default function TaskDetailPage() {
     const fetchTask = async () => {
       const supabase = createClient();
 
-      // Fetch task
-const { data: taskData, error } = await supabase
-  .from("tasks")
-  .select(`
-    *,
-    programme:programmes(id, name)
-  `)
-  .eq("id", taskId)
-  .single();
+      // Fetch task with programme join
+      const { data: taskData, error } = await supabase
+        .from("tasks")
+        .select(`
+          *,
+          programme:programmes(id, name)
+        `)
+        .eq("id", taskId)
+        .single();
 
-if (error || !taskData) {
-  console.error("Error fetching task:", error);
-  setIsLoading(false);
-  return;
-}
+      if (error || !taskData) {
+        console.error("Error fetching task:", error);
+        setIsLoading(false);
+        return;
+      }
 
-// Fetch creator separately
-let creator = null;
-if (taskData.created_by) {
-  const { data: creatorData } = await supabase
-    .from("profiles")
-    .select("id, full_name, username")
-    .eq("id", taskData.created_by)
-    .single();
-  creator = creatorData;
-}
+      // Fetch creator separately (avoids FK join issues)
+      let creator = null;
+      if (taskData.created_by) {
+        const { data: creatorData } = await supabase
+          .from("profiles")
+          .select("id, full_name, username")
+          .eq("id", taskData.created_by)
+          .single();
+        creator = creatorData;
+      }
 
-setTask({
-  ...taskData,
-  programme: Array.isArray(taskData.programme) ? taskData.programme[0] : taskData.programme,
-  creator,
-});
-setEditStatus(taskData.status);
-setEditPriority(taskData.priority);
-
-
+      // FIX: single setTask call — use separately-fetched creator
       setTask({
         ...taskData,
         programme: Array.isArray(taskData.programme) ? taskData.programme[0] : taskData.programme,
-        creator: Array.isArray(taskData.creator) ? taskData.creator[0] : taskData.creator,
+        creator,
       });
       setEditStatus(taskData.status);
       setEditPriority(taskData.priority);
@@ -213,6 +227,7 @@ setEditPriority(taskData.priority);
   }, [taskId]);
 
   const handleDelete = async () => {
+    if (!user?.id || !task) return;
     setIsDeleting(true);
     const supabase = createClient();
 
@@ -224,11 +239,16 @@ setEditPriority(taskData.priority);
       return;
     }
 
+    // Log to audit_logs
+    await logAudit(user.id, "task_deleted", "task", taskId, {
+      title: task.title,
+    });
+
     router.push("/tasks");
   };
 
   const handlePostUpdate = async () => {
-    if (!newUpdate.trim() || !user?.id) return;
+    if (!newUpdate.trim() || !user?.id || !task) return;
 
     setIsPostingUpdate(true);
     const supabase = createClient();
@@ -250,6 +270,12 @@ setEditPriority(taskData.priority);
       return;
     }
 
+    // FIX: Log to audit_logs so it shows in Activity Stream + Control Tower
+    await logAudit(user.id, "task_commented", "task", taskId, {
+      title: task.title,
+      comment: newUpdate.trim().slice(0, 100),
+    });
+
     // Add to local state
     const { data: userData } = await supabase
       .from("profiles")
@@ -269,12 +295,13 @@ setEditPriority(taskData.priority);
   };
 
   const handleAddAssignee = async (userId: string) => {
+    if (!user?.id || !task) return;
     const supabase = createClient();
 
     const { error } = await supabase.from("task_assignees").insert({
       task_id: taskId,
       user_id: userId,
-      assigned_by: user?.id,
+      assigned_by: user.id,
     });
 
     if (error) {
@@ -282,7 +309,6 @@ setEditPriority(taskData.priority);
       return;
     }
 
-    // Refresh assignees
     const newUser = allUsers.find((u) => u.id === userId);
     if (newUser) {
       setAssignees([
@@ -295,34 +321,48 @@ setEditPriority(taskData.priority);
       ]);
     }
 
-    // Log activity
+    // Log to task_updates (in-task timeline)
     await supabase.from("task_updates").insert({
       task_id: taskId,
-      user_id: user?.id,
+      user_id: user.id,
       content: `Assigned ${newUser?.full_name || newUser?.username} to this task`,
       update_type: "assignment",
+    });
+
+    // FIX: Also log to audit_logs
+    await logAudit(user.id, "task_assigned", "task", taskId, {
+      title: task.title,
+      name: newUser?.full_name || newUser?.username || "",
     });
 
     setShowAddAssignee(false);
   };
 
   const handleRemoveAssignee = async (assigneeId: string, assigneeUser: TaskAssignee["user"]) => {
+    if (!user?.id || !task) return;
     const supabase = createClient();
 
     await supabase.from("task_assignees").delete().eq("id", assigneeId);
 
     setAssignees(assignees.filter((a) => a.id !== assigneeId));
 
-    // Log activity
+    // Log to task_updates (in-task timeline)
     await supabase.from("task_updates").insert({
       task_id: taskId,
-      user_id: user?.id,
+      user_id: user.id,
       content: `Removed ${assigneeUser.full_name || assigneeUser.username} from this task`,
       update_type: "assignment",
+    });
+
+    // FIX: Also log to audit_logs
+    await logAudit(user.id, "task_unassigned", "task", taskId, {
+      title: task.title,
+      name: assigneeUser.full_name || assigneeUser.username,
     });
   };
 
   const handleSaveChanges = async () => {
+    if (!user?.id || !task) return;
     const supabase = createClient();
 
     const { error } = await supabase
@@ -338,13 +378,30 @@ setEditPriority(taskData.priority);
       return;
     }
 
-    // Log activity
-    if (editStatus !== task?.status) {
+    // Log status change to task_updates (in-task timeline)
+    if (editStatus !== task.status) {
       await supabase.from("task_updates").insert({
         task_id: taskId,
-        user_id: user?.id,
-        content: `Changed status from "${STATUS_LABELS[task?.status || ""]}" to "${STATUS_LABELS[editStatus]}"`,
+        user_id: user.id,
+        content: `Changed status from "${STATUS_LABELS[task.status || ""]}" to "${STATUS_LABELS[editStatus]}"`,
         update_type: "status_change",
+      });
+
+      // FIX: Also log to audit_logs
+      await logAudit(user.id, "task_status_changed", "task", taskId, {
+        title: task.title,
+        from: STATUS_LABELS[task.status] || task.status,
+        to: STATUS_LABELS[editStatus] || editStatus,
+      });
+    }
+
+    // Log priority change
+    if (editPriority !== task.priority) {
+      await logAudit(user.id, "task_updated", "task", taskId, {
+        title: task.title,
+        field: "priority",
+        from: task.priority,
+        to: editPriority,
       });
     }
 
@@ -570,7 +627,7 @@ setEditPriority(taskData.priority);
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm">
+                        <p className="text-sm font-medium">
                           {update.user.full_name || update.user.username}
                         </p>
                         <span className="font-mono text-xs text-muted-foreground">
@@ -638,7 +695,6 @@ setEditPriority(taskData.priority);
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <h2 className="font-bold">Details</h2>
             <div className="mt-4 space-y-4">
-              {/* Created By */}
               <div className="flex items-center gap-3">
                 <User className="h-4 w-4 text-muted-foreground" />
                 <div>
@@ -649,7 +705,6 @@ setEditPriority(taskData.priority);
                 </div>
               </div>
 
-              {/* Due Date */}
               {task.due_date && (
                 <div className="flex items-center gap-3">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -660,7 +715,6 @@ setEditPriority(taskData.priority);
                 </div>
               )}
 
-              {/* Programme */}
               {task.programme && (
                 <div className="flex items-center gap-3">
                   <FolderKanban className="h-4 w-4 text-muted-foreground" />
@@ -676,7 +730,6 @@ setEditPriority(taskData.priority);
                 </div>
               )}
 
-              {/* Created At */}
               <div className="flex items-center gap-3">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <div>

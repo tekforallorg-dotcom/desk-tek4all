@@ -10,6 +10,9 @@ import {
   Plus,
   ArrowRight,
   Calendar,
+  Shield,
+  Mail,
+  Activity,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -33,14 +36,9 @@ interface Task {
   programme?: { name: string } | null;
 }
 
-interface Programme {
-  id: string;
-  name: string;
-  status: string;
-}
-
 interface AuditLog {
   id: string;
+  user_id: string;
   action: string;
   entity_type: string;
   entity_id: string;
@@ -53,56 +51,64 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
   const [recentActivity, setRecentActivity] = useState<AuditLog[]>([]);
+  const [nameMap, setNameMap] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      const supabase = createClient();
+      if (!user?.id || !profile) return;
 
-      // Fetch all tasks
+      const supabase = createClient();
+      const isAdmin = profile.role === "admin" || profile.role === "super_admin";
+      const isManager = profile.role === "manager";
+
+      // ── 1. Fetch all tasks ──────────────────────────────────────────
       const { data: tasks } = await supabase
         .from("tasks")
-        .select("*, programme:programmes(name)");
+        .select("id, title, status, priority, due_date, programme:programmes(name)");
 
-      // Fetch all programmes
+      const taskList = (tasks || []).map((t) => ({
+        ...t,
+        programme: Array.isArray(t.programme) ? t.programme[0] : t.programme,
+      }));
+
+      // ── 2. Get MY task IDs via task_assignees (many-to-many) ────────
+      const { data: myAssignments } = await supabase
+        .from("task_assignees")
+        .select("task_id")
+        .eq("user_id", user.id);
+
+      const myTaskIds = new Set((myAssignments || []).map((a) => a.task_id));
+
+      // ── 3. Fetch all programmes ─────────────────────────────────────
       const { data: programmes } = await supabase
         .from("programmes")
-        .select("*");
+        .select("id, status");
 
-      // Fetch recent audit logs
-      const { data: logs } = await supabase
-        .from("audit_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      // Calculate stats
-      const now = new Date();
-      const taskList = tasks || [];
       const programmeList = programmes || [];
 
+      // ── 4. Calculate stats ──────────────────────────────────────────
+      const now = new Date();
+
+      const myTasks = taskList.filter((t) => myTaskIds.has(t.id));
       const overdueTasks = taskList.filter(
-        (t) =>
-          t.due_date &&
-          new Date(t.due_date) < now &&
-          t.status !== "done"
+        (t) => t.due_date && new Date(t.due_date) < now && t.status !== "done"
       );
 
       setStats({
         totalTasks: taskList.length,
-        myTasks: taskList.filter((t) => t.assignee_id === user?.id).length,
+        myTasks: myTasks.length,
         overdueTasks: overdueTasks.length,
         completedTasks: taskList.filter((t) => t.status === "done").length,
         totalProgrammes: programmeList.length,
-        activeProgrammes: programmeList.filter((p) => p.status === "active")
-          .length,
+        activeProgrammes: programmeList.filter((p) => p.status === "active").length,
       });
 
-      // Get upcoming tasks (due in next 7 days, not done)
+      // ── 5. Due This Week (MY tasks only) ────────────────────────────
       const weekFromNow = new Date();
       weekFromNow.setDate(weekFromNow.getDate() + 7);
 
-      const upcoming = taskList
+      const upcoming = myTasks
         .filter(
           (t) =>
             t.due_date &&
@@ -117,14 +123,64 @@ export default function DashboardPage() {
         .slice(0, 5);
 
       setUpcomingTasks(upcoming);
+
+      // ── 6. Activity scope via hierarchy ─────────────────────────────
+      // Admin: all activity
+      // Manager: self + direct reports
+      // Member: self only
+      let activityUserIds: string[] | null = null; // null = no filter (admin)
+
+      if (!isAdmin) {
+        activityUserIds = [user.id];
+
+        if (isManager) {
+          const { data: hierarchyData } = await supabase
+            .from("hierarchy")
+            .select("report_id")
+            .eq("manager_id", user.id);
+
+          for (const h of hierarchyData || []) {
+            activityUserIds.push(h.report_id);
+          }
+        }
+      }
+
+      let activityQuery = supabase
+        .from("audit_logs")
+        .select("*")
+        .not("action", "eq", "email_classified")
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (activityUserIds !== null && activityUserIds.length > 0) {
+        activityQuery = activityQuery.in("user_id", activityUserIds);
+      }
+
+      const { data: logs } = await activityQuery;
       setRecentActivity(logs || []);
+
+      // ── 7. Build name map for activity display ──────────────────────
+      const userIds = [...new Set((logs || []).map((l) => l.user_id).filter(Boolean))];
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name, username")
+          .in("id", userIds);
+
+        const names = new Map<string, string>();
+        for (const p of profiles || []) {
+          names.set(p.id, p.full_name || p.username || "Unknown user");
+        }
+        setNameMap(names);
+      }
+
       setIsLoading(false);
     };
 
-    if (user) {
+    if (user && profile) {
       fetchDashboardData();
     }
-  }, [user]);
+  }, [user, profile]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -154,8 +210,21 @@ export default function DashboardPage() {
     return `${diffDays}d ago`;
   };
 
+  const getActivityIcon = (log: AuditLog) => {
+    if (log.action.startsWith("email")) return Mail;
+    if (
+      ["login", "user_login", "logout", "password_reset", "password_changed", "user_created"].includes(
+        log.action
+      )
+    )
+      return Shield;
+    if (log.entity_type === "programme") return FolderKanban;
+    if (log.entity_type === "task") return CheckSquare;
+    return Activity;
+  };
+
   const getActivityLabel = (log: AuditLog) => {
-    const name = log.details?.title || log.details?.name || "Item";
+    const name = log.details?.title || log.details?.name || "";
     switch (log.action) {
       case "task_created":
         return `Created task "${name}"`;
@@ -164,16 +233,43 @@ export default function DashboardPage() {
       case "task_deleted":
         return `Deleted task "${name}"`;
       case "task_status_changed":
-        return `Changed task status to ${log.details?.to}`;
+        return `Changed status to ${log.details?.to || "unknown"}`;
+      case "task_assigned":
+        return `Assigned task "${name}"`;
+      case "task_unassigned":
+        return `Unassigned from "${name}"`;
+      case "task_commented":
+        return `Commented on "${name}"`;
       case "programme_created":
         return `Created programme "${name}"`;
       case "programme_updated":
         return `Updated programme "${name}"`;
       case "programme_deleted":
         return `Deleted programme "${name}"`;
+      case "login":
+      case "user_login":
+        return "Signed in";
+      case "logout":
+        return "Signed out";
+      case "password_reset":
+        return `Reset password for ${name || "a user"}`;
+      case "password_changed":
+        return "Changed password";
+      case "user_created":
+        return `Created user "${name}"`;
+      case "email_replied":
+        return `Replied to email "${name}"`;
+      case "email_sent":
+        return `Sent email "${name}"`;
+      case "email_drafted":
+        return `Drafted reply to "${name}"`;
       default:
         return log.action.replace(/_/g, " ");
     }
+  };
+
+  const getUserName = (userId: string) => {
+    return nameMap.get(userId) || "Unknown user";
   };
 
   const getPriorityStyle = (priority: string) => {
@@ -276,7 +372,7 @@ export default function DashboardPage() {
           <div className="mt-4 space-y-3">
             {upcomingTasks.length === 0 ? (
               <p className="py-8 text-center font-mono text-sm text-muted-foreground">
-                No tasks due this week. 🎉
+                No tasks due this week. 
               </p>
             ) : (
               upcomingTasks.map((task) => (
@@ -305,10 +401,19 @@ export default function DashboardPage() {
 
         {/* Recent Activity */}
         <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
-          <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
-            <Clock className="h-5 w-5" strokeWidth={1.5} />
-            Recent Activity
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
+              <Clock className="h-5 w-5" strokeWidth={1.5} />
+              Recent Activity
+            </h2>
+            <Link
+              href="/activity"
+              className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+            >
+              View all
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
 
           <div className="mt-4 space-y-3">
             {recentActivity.length === 0 ? (
@@ -316,34 +421,31 @@ export default function DashboardPage() {
                 No recent activity.
               </p>
             ) : (
-              recentActivity.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-start gap-3 rounded-xl border-2 border-border bg-background p-3"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted">
-                    {log.entity_type === "task" ? (
-                      <CheckSquare
+              recentActivity.map((log) => {
+                const Icon = getActivityIcon(log);
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-start gap-3 rounded-xl border-2 border-border bg-background p-3"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted">
+                      <Icon
                         className="h-4 w-4 text-muted-foreground"
                         strokeWidth={1.5}
                       />
-                    ) : (
-                      <FolderKanban
-                        className="h-4 w-4 text-muted-foreground"
-                        strokeWidth={1.5}
-                      />
-                    )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-card-foreground">
+                        <span className="font-medium">{getUserName(log.user_id)}</span>{" "}
+                        {getActivityLabel(log)}
+                      </p>
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        {formatActivityTime(log.created_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-card-foreground">
-                      {getActivityLabel(log)}
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                      {formatActivityTime(log.created_at)}
-                    </p>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

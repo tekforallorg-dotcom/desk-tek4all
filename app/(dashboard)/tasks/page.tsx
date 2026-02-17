@@ -15,7 +15,6 @@ interface Task {
   priority: string;
   due_date: string | null;
   programme_id: string | null;
-  assignee_id: string | null;
   created_at: string;
   programme?: { name: string } | null;
 }
@@ -39,32 +38,61 @@ type FilterType = "all" | "my_tasks" | "todo" | "in_progress" | "done";
 export default function TasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [myTaskIds, setMyTaskIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
 
   useEffect(() => {
     const fetchTasks = async () => {
+      if (!user?.id) return;
+
       const supabase = createClient();
+
+      // Fetch all tasks with programme join
       const { data, error } = await supabase
         .from("tasks")
-        .select("*, programme:programmes(name)")
+        .select("id, title, description, status, priority, due_date, programme_id, created_at, programme:programmes(name)")
         .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching tasks:", error);
       } else {
-        setTasks(data || []);
+        // Normalize programme join — Supabase returns array for FK select joins
+        const normalized: Task[] = (data || []).map((t) => {
+          const prog = t.programme;
+          return {
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            priority: t.priority,
+            due_date: t.due_date,
+            programme_id: t.programme_id,
+            created_at: t.created_at,
+            programme: Array.isArray(prog) ? prog[0] ?? null : prog ?? null,
+          };
+        });
+        setTasks(normalized);
       }
+
+      // FIX: Fetch user's task assignments via task_assignees (many-to-many)
+      const { data: myAssignments } = await supabase
+        .from("task_assignees")
+        .select("task_id")
+        .eq("user_id", user.id);
+
+      setMyTaskIds(new Set((myAssignments || []).map((a) => a.task_id)));
       setIsLoading(false);
     };
 
     fetchTasks();
-  }, []);
+  }, [user?.id]);
 
+  // FIX: Filter "My Tasks" using task_assignees Set, not assignee_id
   const filteredTasks = tasks.filter((task) => {
     switch (filter) {
       case "my_tasks":
-        return task.assignee_id === user?.id;
+        return myTaskIds.has(task.id);
       case "todo":
         return task.status === "todo";
       case "in_progress":
@@ -76,9 +104,10 @@ export default function TasksPage() {
     }
   });
 
+  // FIX: Counts also use myTaskIds Set
   const taskCounts = {
     all: tasks.length,
-    my_tasks: tasks.filter((t) => t.assignee_id === user?.id).length,
+    my_tasks: tasks.filter((t) => myTaskIds.has(t.id)).length,
     todo: tasks.filter((t) => t.status === "todo").length,
     in_progress: tasks.filter((t) => t.status === "in_progress").length,
     done: tasks.filter((t) => t.status === "done").length,

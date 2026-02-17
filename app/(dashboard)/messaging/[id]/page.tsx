@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Send, Plus, Users, X, Search, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -38,11 +38,35 @@ export default function ConversationPage() {
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const fetchParticipants = async () => {
+    const supabase = createClient();
+    const { data: partData } = await supabase
+      .from("conversation_participants")
+      .select("user_id")
+      .eq("conversation_id", conversationId);
+
+    if (partData) {
+      const participantsWithDetails = await Promise.all(
+        partData.map(async (p) => {
+          const { data: userData } = await supabase
+            .from("profiles")
+            .select("full_name, username")
+            .eq("id", p.user_id)
+            .single();
+          return { user_id: p.user_id, user: userData! };
+        })
+      );
+      setParticipants(participantsWithDetails);
+    }
   };
 
   useEffect(() => {
@@ -61,24 +85,7 @@ export default function ConversationPage() {
       }
 
       // Get participants
-      const { data: partData } = await supabase
-        .from("conversation_participants")
-        .select("user_id")
-        .eq("conversation_id", conversationId);
-
-      if (partData) {
-        const participantsWithDetails = await Promise.all(
-          partData.map(async (p) => {
-            const { data: userData } = await supabase
-              .from("profiles")
-              .select("full_name, username")
-              .eq("id", p.user_id)
-              .single();
-            return { user_id: p.user_id, user: userData! };
-          })
-        );
-        setParticipants(participantsWithDetails);
-      }
+      await fetchParticipants();
 
       // Get messages
       const { data: msgData } = await supabase
@@ -134,6 +141,7 @@ export default function ConversationPage() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   useEffect(() => {
@@ -143,19 +151,48 @@ export default function ConversationPage() {
   const handleSend = async () => {
     if (!newMessage.trim() || isSending) return;
 
+    const content = newMessage.trim();
+    setNewMessage("");
     setIsSending(true);
-    const supabase = createClient();
 
-    const { error } = await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      sender_id: user?.id,
-      content: newMessage.trim(),
-    });
+    // Optimistic update — show message immediately
+    const optimisticMsg: Message = {
+      id: `temp-${Date.now()}`,
+      content,
+      sender_id: user?.id || "",
+      created_at: new Date().toISOString(),
+      sender: {
+        full_name: "You",
+        username: "",
+      },
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user?.id,
+        content,
+      })
+      .select()
+      .single();
 
     if (error) {
       console.error("Error sending message:", error);
-    } else {
-      setNewMessage("");
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
+      setNewMessage(content); // Restore the message
+    } else if (data) {
+      // Replace optimistic message with real one
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === optimisticMsg.id
+            ? { ...data, sender: optimisticMsg.sender }
+            : m
+        )
+      );
     }
 
     setIsSending(false);
@@ -178,7 +215,31 @@ export default function ConversationPage() {
         "Conversation"
       );
     }
-    return "Conversation";
+    // Group: show names
+    const others = participants.filter((p) => p.user_id !== user?.id);
+    if (others.length === 0) return "Conversation";
+    const names = others.slice(0, 2).map(
+      (p) => p.user.full_name?.split(" ")[0] || p.user.username
+    );
+    const remaining = others.length - 2;
+    if (remaining > 0) return `${names.join(", ")} +${remaining}`;
+    return names.join(", ");
+  };
+
+  const getParticipantSummary = () => {
+    const others = participants.filter((p) => p.user_id !== user?.id);
+    if (others.length === 0) return `${participants.length} participant`;
+
+    const names = others.slice(0, 2).map(
+      (p) => p.user.full_name || p.user.username
+    );
+    const remaining = others.length - 2;
+
+    let summary = names.join(", ");
+    if (remaining > 0) {
+      summary += ` and ${remaining} more`;
+    }
+    return summary;
   };
 
   const formatTime = (date: string) => {
@@ -234,24 +295,41 @@ export default function ConversationPage() {
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col">
       {/* Header */}
-      <div className="flex items-center gap-4 pb-4">
-        <Link href="/messaging">
-          <Button
-            variant="outline"
-            size="icon"
-            className="border-2 shadow-retro-sm"
-          >
-            <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">
-            {getConversationTitle()}
-          </h1>
-          <p className="font-mono text-xs text-muted-foreground">
-            {participants.length} participant{participants.length !== 1 ? "s" : ""}
-          </p>
+      <div className="flex items-center justify-between pb-4">
+        <div className="flex items-center gap-4">
+          <Link href="/messaging">
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-2 shadow-retro-sm"
+            >
+              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">
+              {getConversationTitle()}
+            </h1>
+            <button
+              onClick={() => setShowParticipants(true)}
+              className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {participants.length} participant{participants.length !== 1 ? "s" : ""}{" "}
+              — {getParticipantSummary()}
+            </button>
+          </div>
         </div>
+
+        {/* Add member button */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setShowAddMember(true)}
+          className="border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
+          title="Add participant"
+        >
+          <UserPlus className="h-4 w-4" strokeWidth={1.5} />
+        </Button>
       </div>
 
       {/* Messages */}
@@ -294,7 +372,7 @@ export default function ConversationPage() {
                               {msg.sender?.full_name || msg.sender?.username}
                             </p>
                           )}
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
                           <p
                             className={`mt-1 text-right font-mono text-[10px] ${
                               isOwn ? "text-background/70" : "text-muted-foreground"
@@ -331,6 +409,233 @@ export default function ConversationPage() {
         >
           <Send className="h-5 w-5" strokeWidth={1.5} />
         </Button>
+      </div>
+
+      {/* Participants Panel */}
+      {showParticipants && (
+        <ParticipantsPanel
+          participants={participants}
+          currentUserId={user?.id}
+          onClose={() => setShowParticipants(false)}
+          onAddMember={() => {
+            setShowParticipants(false);
+            setShowAddMember(true);
+          }}
+        />
+      )}
+
+      {/* Add Member Modal */}
+      {showAddMember && (
+        <AddMemberModal
+          conversationId={conversationId}
+          existingParticipantIds={participants.map((p) => p.user_id)}
+          currentUserId={user?.id}
+          onClose={() => setShowAddMember(false)}
+          onAdded={() => {
+            setShowAddMember(false);
+            fetchParticipants();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ParticipantsPanel({
+  participants,
+  currentUserId,
+  onClose,
+  onAddMember,
+}: {
+  participants: Participant[];
+  currentUserId?: string;
+  onClose: () => void;
+  onAddMember: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-foreground/60" onClick={onClose} />
+
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">
+            Participants ({participants.length})
+          </h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 hover:bg-muted"
+          >
+            <X className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {participants.map((p) => (
+            <div
+              key={p.user_id}
+              className="flex items-center gap-3 rounded-xl border-2 border-border bg-background p-3"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs font-bold">
+                {(p.user.full_name || p.user.username)
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">
+                  {p.user.full_name || p.user.username}
+                  {p.user_id === currentUserId && (
+                    <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">
+                      (you)
+                    </span>
+                  )}
+                </p>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  @{p.user.username}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          onClick={onAddMember}
+          className="mt-4 w-full border-2 border-foreground bg-foreground text-background shadow-retro"
+        >
+          <UserPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          Add Member
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AddMemberModal({
+  conversationId,
+  existingParticipantIds,
+  currentUserId,
+  onClose,
+  onAdded,
+}: {
+  conversationId: string;
+  existingParticipantIds: string[];
+  currentUserId?: string;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const [users, setUsers] = useState<
+    { id: string; full_name: string; username: string }[]
+  >([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isAdding, setIsAdding] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name, username")
+        .not("id", "in", `(${existingParticipantIds.join(",")})`)
+        .order("full_name");
+      setUsers(data || []);
+    };
+    fetchUsers();
+  }, [existingParticipantIds]);
+
+  const filteredUsers = users.filter((u) => {
+    const search = searchQuery.toLowerCase();
+    if (!search) return true;
+    return (
+      u.full_name?.toLowerCase().includes(search) ||
+      u.username.toLowerCase().includes(search)
+    );
+  });
+
+  const addMember = async (userId: string) => {
+    setIsAdding(userId);
+    const supabase = createClient();
+
+    const { error } = await supabase
+      .from("conversation_participants")
+      .insert({
+        conversation_id: conversationId,
+        user_id: userId,
+      });
+
+    if (error) {
+      console.error("Error adding participant:", error);
+      setIsAdding(null);
+      return;
+    }
+
+    onAdded();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-foreground/60" onClick={onClose} />
+
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">Add Member</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 hover:bg-muted"
+          >
+            <X className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="relative mt-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search team members..."
+            className="w-full rounded-xl border-2 border-border bg-background py-3 pl-10 pr-4 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
+          />
+        </div>
+
+        {/* User list */}
+        <div className="mt-3 max-h-64 overflow-y-auto">
+          {filteredUsers.length === 0 ? (
+            <p className="py-6 text-center font-mono text-xs text-muted-foreground">
+              {searchQuery
+                ? "No users found."
+                : "All team members are already in this chat."}
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {filteredUsers.map((u) => (
+                <div
+                  key={u.id}
+                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-muted/50"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-border bg-background font-mono text-xs font-bold">
+                    {(u.full_name || u.username).slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      {u.full_name || u.username}
+                    </p>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      @{u.username}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => addMember(u.id)}
+                    disabled={isAdding === u.id}
+                    className="h-8 border-2 border-foreground bg-foreground px-3 text-background shadow-retro-sm disabled:opacity-50"
+                  >
+                    {isAdding === u.id ? "..." : "Add"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

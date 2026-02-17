@@ -11,10 +11,14 @@ import {
   Mail,
   Shield,
   Settings,
+  TowerControl,
   Moon,
   X,
   Users,
   ClipboardCheck,
+  Activity,
+  BarChart3,
+  HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -36,22 +40,22 @@ const navigation = [
     href: "/tasks",
     icon: CheckSquare,
   },
-{
-  name: "Team",
-  href: "/team",
-  icon: Users,
-  allowedRoles: ["manager", "admin", "super_admin"],
-},
+  {
+    name: "Team",
+    href: "/team",
+    icon: Users,
+    allowedRoles: ["manager", "admin", "super_admin"],
+  },
   {
     name: "Messaging",
     href: "/messaging",
     icon: MessageSquare,
   },
   {
-  name: "Check-ins",
-  href: "/checkins",
-  icon: ClipboardCheck,
-},
+    name: "Check-ins",
+    href: "/checkins",
+    icon: ClipboardCheck,
+  },
   {
     name: "Shared Mail",
     href: "/shared-mail",
@@ -59,10 +63,24 @@ const navigation = [
     requiresGroup: "shared_mail_admin",
   },
   {
-    name: "Admin",
+    name: "Activity",
+    href: "/activity",
+    icon: Activity,
+  },
+  {
+    name: "Analytics",
+    href: "/analytics",
+    icon: BarChart3,
+  },
+  {
+    name: "Drive",
+    href: "/drive",
+    icon: HardDrive,
+  },
+  {
+    name: "Control Tower",
     href: "/admin",
-    icon: Shield,
-    allowedRoles: ["admin", "super_admin"],
+    icon: TowerControl,
   },
 ];
 
@@ -90,17 +108,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         .eq("user_id", user.id);
 
       if (data) {
-       const groupNames: string[] = [];
-if (data) {
-  for (const gm of data) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const group = gm.group as any;
-    if (group?.name) {
-      groupNames.push(group.name);
-    }
-  }
-}
-setUserGroups(groupNames);
+        const groupNames: string[] = [];
+        if (data) {
+          for (const gm of data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const group = gm.group as any;
+            if (group?.name) {
+              groupNames.push(group.name);
+            }
+          }
+        }
+        setUserGroups(groupNames);
       }
     };
 
@@ -175,12 +193,14 @@ setUserGroups(groupNames);
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-6">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-6">
           <p className="mb-3 px-3 font-mono text-[10px] font-medium uppercase tracking-widest text-sidebar-foreground/40">
             Menu
           </p>
           {filteredNav.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/" && pathname.startsWith(item.href));
             return (
               <Link
                 key={item.name}
@@ -218,7 +238,7 @@ setUserGroups(groupNames);
           
           <div className="mt-4 px-3 text-center">
             <p className="font-mono text-[9px] uppercase tracking-widest text-sidebar-foreground/30">
-              © 2024 Tek4All
+              © 2026 Tek4All
             </p>
           </div>
         </div>

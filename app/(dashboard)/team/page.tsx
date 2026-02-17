@@ -63,7 +63,7 @@ export default function TeamPage() {
 
       const supabase = createClient();
 
-      // Get direct reports
+      // Get direct reports from hierarchy table
       const { data: hierarchyData } = await supabase
         .from("hierarchy")
         .select("report_id")
@@ -97,7 +97,7 @@ export default function TeamPage() {
 
       setTeamMembers(membersData || []);
 
-      // Get team tasks
+      // Get team tasks via task_assignees (many-to-many)
       await fetchTeamTasks(reportIds);
 
       setIsLoading(false);
@@ -106,41 +106,77 @@ export default function TeamPage() {
     const fetchTeamTasks = async (memberIds: string[]) => {
       const supabase = createClient();
       
+      // FIX: Use task_assignees for many-to-many assignments
+      // instead of tasks.assignee_id (single UUID)
+      const { data: assignments } = await supabase
+        .from("task_assignees")
+        .select("task_id, user_id")
+        .in("user_id", memberIds);
+
+      if (!assignments || assignments.length === 0) {
+        setTeamTasks([]);
+        setStats({ totalTasks: 0, completedTasks: 0, overdueTasks: 0, dueThisWeek: 0 });
+        return;
+      }
+
+      // Get unique task IDs
+      const taskIds = [...new Set(assignments.map((a) => a.task_id))];
+
+      // Fetch full task data
       const { data: tasksData } = await supabase
         .from("tasks")
-        .select("id, title, status, priority, due_date, assignee_id, programme:programmes(name)")
-        .in("assignee_id", memberIds)
+        .select("id, title, status, priority, due_date, programme:programmes(name)")
+        .in("id", taskIds)
         .order("due_date", { ascending: true });
 
-      const tasks: Task[] = (tasksData || []).map((t) => ({
-  id: t.id,
-  title: t.title,
-  status: t.status,
-  priority: t.priority,
-  due_date: t.due_date,
-  assignee_id: t.assignee_id,
-  programme: Array.isArray(t.programme) ? t.programme[0] : t.programme,
-}));
-setTeamTasks(tasks);
+      // Build assignment lookup: task_id → user_ids
+      const taskAssigneeMap = new Map<string, string[]>();
+      for (const a of assignments) {
+        if (!taskAssigneeMap.has(a.task_id)) {
+          taskAssigneeMap.set(a.task_id, []);
+        }
+        taskAssigneeMap.get(a.task_id)!.push(a.user_id);
+      }
 
-      // Calculate stats
+      // For each task, create one entry per assigned team member
+      // so filtering by member works correctly
+      const tasks: Task[] = [];
+      for (const t of tasksData || []) {
+        const assignedUserIds = taskAssigneeMap.get(t.id) || [];
+        for (const userId of assignedUserIds) {
+          tasks.push({
+            id: `${t.id}-${userId}`, // Unique key for React
+            title: t.title,
+            status: t.status,
+            priority: t.priority,
+            due_date: t.due_date,
+            assignee_id: userId,
+            programme: Array.isArray(t.programme) ? t.programme[0] : t.programme,
+          });
+        }
+      }
+
+      setTeamTasks(tasks);
+
+      // Calculate stats (deduplicate by original task ID)
+      const uniqueTasks = tasksData || [];
       const now = new Date();
       const weekFromNow = new Date();
       weekFromNow.setDate(weekFromNow.getDate() + 7);
 
-      const completed = tasks.filter((t) => t.status === "completed").length;
-      const overdue = tasks.filter((t) => {
-        if (!t.due_date || t.status === "completed") return false;
+      const completed = uniqueTasks.filter((t) => t.status === "completed" || t.status === "done").length;
+      const overdue = uniqueTasks.filter((t) => {
+        if (!t.due_date || t.status === "completed" || t.status === "done") return false;
         return new Date(t.due_date) < now;
       }).length;
-      const dueThisWeek = tasks.filter((t) => {
-        if (!t.due_date || t.status === "completed") return false;
+      const dueThisWeek = uniqueTasks.filter((t) => {
+        if (!t.due_date || t.status === "completed" || t.status === "done") return false;
         const dueDate = new Date(t.due_date);
         return dueDate >= now && dueDate <= weekFromNow;
       }).length;
 
       setStats({
-        totalTasks: tasks.length,
+        totalTasks: uniqueTasks.length,
         completedTasks: completed,
         overdueTasks: overdue,
         dueThisWeek: dueThisWeek,
@@ -156,7 +192,12 @@ setTeamTasks(tasks);
     ? teamTasks.filter((t) => t.assignee_id === selectedMember)
     : teamTasks;
 
-  const activeTasks = filteredTasks.filter((t) => t.status !== "completed");
+  // Deduplicate tasks for display (a task shared by 2 members shows once in "All")
+  const deduplicatedTasks = selectedMember
+    ? filteredTasks
+    : Array.from(new Map(filteredTasks.map((t) => [t.title + t.status, t])).values());
+
+  const activeTasks = deduplicatedTasks.filter((t) => t.status !== "completed" && t.status !== "done");
   const overdueTasks = activeTasks.filter((t) => {
     if (!t.due_date) return false;
     return new Date(t.due_date) < new Date();
@@ -186,6 +227,14 @@ setTeamTasks(tasks);
       default:
         return "bg-gray-100 text-gray-700 border-gray-200";
     }
+  };
+
+  // Extract original task ID for linking (strip the -userId suffix)
+  const getTaskLinkId = (task: Task) => {
+    const parts = task.id.split("-");
+    // UUID has 5 parts joined by hyphens; we appended -userId which is another UUID
+    // Original task ID = first 5 segments
+    return parts.slice(0, 5).join("-");
   };
 
   if (authLoading) {
@@ -297,13 +346,13 @@ setTeamTasks(tasks);
               <Users className="h-5 w-5" strokeWidth={1.5} />
               <span className="font-medium">All Members</span>
               <span className="ml-auto font-mono text-xs opacity-70">
-                {teamTasks.filter((t) => t.status !== "completed").length}
+                {teamTasks.filter((t) => t.status !== "completed" && t.status !== "done").length}
               </span>
             </button>
 
             {teamMembers.map((member) => {
               const memberTasks = teamTasks.filter(
-                (t) => t.assignee_id === member.id && t.status !== "completed"
+                (t) => t.assignee_id === member.id && t.status !== "completed" && t.status !== "done"
               );
               const memberOverdue = memberTasks.filter((t) => isOverdue(t.due_date));
 
@@ -369,7 +418,7 @@ setTeamTasks(tasks);
               </p>
               <div className="mt-2 space-y-2">
                 {overdueTasks.slice(0, 5).map((task) => (
-                  <Link key={task.id} href={`/tasks/${task.id}`}>
+                  <Link key={task.id} href={`/tasks/${getTaskLinkId(task)}`}>
                     <div className="flex items-center gap-3 rounded-xl border-2 border-red-200 bg-red-50 p-3 transition-all hover:border-red-300">
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium text-red-900">
@@ -398,7 +447,7 @@ setTeamTasks(tasks);
                 .filter((t) => !isOverdue(t.due_date))
                 .slice(0, 10)
                 .map((task) => (
-                  <Link key={task.id} href={`/tasks/${task.id}`}>
+                  <Link key={task.id} href={`/tasks/${getTaskLinkId(task)}`}>
                     <div className="flex items-center gap-3 rounded-xl border-2 border-border p-3 transition-all hover:border-foreground">
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{task.title}</p>

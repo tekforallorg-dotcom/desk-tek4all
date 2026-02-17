@@ -9,6 +9,7 @@ import {
   Users,
   FolderKanban,
   CheckSquare,
+  X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -17,7 +18,7 @@ import { Input } from "@/components/ui/input";
 
 interface Conversation {
   id: string;
-  type: "dm" | "programme" | "task";
+  type: "dm" | "group" | "programme" | "task";
   title: string | null;
   programme_id: string | null;
   task_id: string | null;
@@ -32,6 +33,7 @@ interface Conversation {
     user_id: string;
     user: { full_name: string; username: string };
   }[];
+  participant_count?: number;
 }
 
 export default function MessagingPage() {
@@ -39,7 +41,8 @@ export default function MessagingPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showNewDM, setShowNewDM] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
 
   useEffect(() => {
     const fetchConversations = async () => {
@@ -103,32 +106,35 @@ export default function MessagingPage() {
             };
           }
 
-          // Get participants for DMs
-          let participants: Conversation["participants"] = [];
-          if (conv.type === "dm") {
-            const { data: partData } = await supabase
-              .from("conversation_participants")
-              .select("user_id")
-              .eq("conversation_id", conv.id);
+          // Get all participants
+          const { data: partData } = await supabase
+            .from("conversation_participants")
+            .select("user_id")
+            .eq("conversation_id", conv.id);
 
-            if (partData) {
-              const otherParticipants = partData.filter(
-                (p) => p.user_id !== user.id
-              );
-              for (const p of otherParticipants) {
-                const { data: userData } = await supabase
-                  .from("profiles")
-                  .select("full_name, username")
-                  .eq("id", p.user_id)
-                  .single();
-                if (userData) {
-                  participants.push({ user_id: p.user_id, user: userData });
-                }
+          const participants: Conversation["participants"] = [];
+          if (partData) {
+            const otherParticipants = partData.filter(
+              (p) => p.user_id !== user.id
+            );
+            for (const p of otherParticipants) {
+              const { data: userData } = await supabase
+                .from("profiles")
+                .select("full_name, username")
+                .eq("id", p.user_id)
+                .single();
+              if (userData) {
+                participants.push({ user_id: p.user_id, user: userData });
               }
             }
           }
 
-          return { ...conv, last_message: lastMessage, participants };
+          return {
+            ...conv,
+            last_message: lastMessage,
+            participants,
+            participant_count: partData?.length || 0,
+          };
         })
       );
 
@@ -155,18 +161,40 @@ export default function MessagingPage() {
 
   const getConversationTitle = (conv: Conversation) => {
     if (conv.title) return conv.title;
-    if (conv.type === "dm" && conv.participants && conv.participants.length > 0) {
-      return (
-        conv.participants[0].user.full_name || conv.participants[0].user.username
+    if (conv.participants && conv.participants.length > 0) {
+      if (conv.type === "dm" || conv.participants.length === 1) {
+        return (
+          conv.participants[0].user.full_name ||
+          conv.participants[0].user.username
+        );
+      }
+      // Group: show first 2 names + count
+      const names = conv.participants.slice(0, 2).map(
+        (p) => p.user.full_name?.split(" ")[0] || p.user.username
       );
+      const remaining = conv.participants.length - 2;
+      if (remaining > 0) {
+        return `${names.join(", ")} +${remaining}`;
+      }
+      return names.join(", ");
     }
     return "Conversation";
   };
 
-  const getConversationIcon = (type: string) => {
-    switch (type) {
+  const getConversationSubtitle = (conv: Conversation) => {
+    if (conv.type === "group" && conv.participant_count) {
+      return `${conv.participant_count} members`;
+    }
+    return null;
+  };
+
+  const getConversationIcon = (conv: Conversation) => {
+    if (conv.type === "group" || (conv.participant_count && conv.participant_count > 2)) {
+      return Users;
+    }
+    switch (conv.type) {
       case "dm":
-        return Users;
+        return MessageSquare;
       case "programme":
         return FolderKanban;
       case "task":
@@ -203,13 +231,23 @@ export default function MessagingPage() {
             Team conversations and discussions.
           </p>
         </div>
-        <Button
-          onClick={() => setShowNewMessage(true)}
-          className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5"
-        >
-          <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
-          New Message
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowNewGroup(true)}
+            className="border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
+          >
+            <Users className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            New Group
+          </Button>
+          <Button
+            onClick={() => setShowNewDM(true)}
+            className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5"
+          >
+            <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            New Message
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -252,19 +290,30 @@ export default function MessagingPage() {
                 : "No messages yet. Start a conversation!"}
             </p>
             {!searchQuery && (
-              <Button
-                onClick={() => setShowNewMessage(true)}
-                className="mt-4 border-2 border-foreground bg-foreground text-background shadow-retro"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Start Conversation
-              </Button>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowNewGroup(true)}
+                  className="border-2 shadow-retro-sm"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  New Group
+                </Button>
+                <Button
+                  onClick={() => setShowNewDM(true)}
+                  className="border-2 border-foreground bg-foreground text-background shadow-retro"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Message
+                </Button>
+              </div>
             )}
           </div>
         ) : (
           <div className="divide-y-2 divide-border">
             {filteredConversations.map((conv) => {
-              const Icon = getConversationIcon(conv.type);
+              const Icon = getConversationIcon(conv);
+              const subtitle = getConversationSubtitle(conv);
               return (
                 <Link key={conv.id} href={`/messaging/${conv.id}`}>
                   <div className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50">
@@ -279,9 +328,16 @@ export default function MessagingPage() {
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <p className="truncate font-medium text-card-foreground">
-                          {getConversationTitle(conv)}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-medium text-card-foreground">
+                            {getConversationTitle(conv)}
+                          </p>
+                          {subtitle && (
+                            <span className="shrink-0 rounded-full border border-border bg-background px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                              {subtitle}
+                            </span>
+                          )}
+                        </div>
                         {conv.last_message && (
                           <span className="shrink-0 font-mono text-xs text-muted-foreground">
                             {formatTime(conv.last_message.created_at)}
@@ -307,11 +363,21 @@ export default function MessagingPage() {
         )}
       </div>
 
-      {/* New Message Modal */}
-      {showNewMessage && (
+      {/* New DM Modal */}
+      {showNewDM && (
         <NewMessageModal
-          onClose={() => setShowNewMessage(false)}
+          onClose={() => setShowNewDM(false)}
           currentUserId={user?.id}
+          mode="dm"
+        />
+      )}
+
+      {/* New Group Modal */}
+      {showNewGroup && (
+        <NewMessageModal
+          onClose={() => setShowNewGroup(false)}
+          currentUserId={user?.id}
+          mode="group"
         />
       )}
     </div>
@@ -321,16 +387,20 @@ export default function MessagingPage() {
 function NewMessageModal({
   onClose,
   currentUserId,
+  mode,
 }: {
   onClose: () => void;
   currentUserId?: string;
+  mode: "dm" | "group";
 }) {
-  const [users, setUsers] = useState <
+  const [users, setUsers] = useState<
     { id: string; full_name: string; username: string }[]
   >([]);
-  const [selectedUser, setSelectedUser] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [groupName, setGroupName] = useState("");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [userSearch, setUserSearch] = useState("");
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -345,89 +415,130 @@ function NewMessageModal({
     fetchUsers();
   }, [currentUserId]);
 
+  const filteredUsers = users.filter((u) => {
+    if (selectedUsers.includes(u.id)) return false;
+    const search = userSearch.toLowerCase();
+    if (!search) return true;
+    return (
+      u.full_name?.toLowerCase().includes(search) ||
+      u.username.toLowerCase().includes(search)
+    );
+  });
+
+  const toggleUser = (userId: string) => {
+    if (mode === "dm") {
+      // DM: single select
+      setSelectedUsers([userId]);
+    } else {
+      // Group: multi select
+      setSelectedUsers((prev) =>
+        prev.includes(userId)
+          ? prev.filter((id) => id !== userId)
+          : [...prev, userId]
+      );
+    }
+  };
+
+  const removeUser = (userId: string) => {
+    setSelectedUsers((prev) => prev.filter((id) => id !== userId));
+  };
+
+  const getSelectedUserNames = () => {
+    return selectedUsers.map((id) => {
+      const u = users.find((u) => u.id === id);
+      return u?.full_name || u?.username || "Unknown";
+    });
+  };
+
   const handleSend = async () => {
-    if (!selectedUser || !message.trim()) return;
+    if (selectedUsers.length === 0 || !message.trim()) return;
+    if (mode === "group" && selectedUsers.length < 2) return;
 
     setIsLoading(true);
     const supabase = createClient();
 
-    // Check if DM already exists between these users
-    const { data: existingParticipants } = await supabase
-      .from("conversation_participants")
-      .select("conversation_id")
-      .eq("user_id", currentUserId);
+    if (mode === "dm") {
+      // Check if DM already exists
+      const { data: existingParticipants } = await supabase
+        .from("conversation_participants")
+        .select("conversation_id")
+        .eq("user_id", currentUserId);
 
-    let existingConvId: string | null = null;
+      let existingConvId: string | null = null;
 
-    if (existingParticipants) {
-      for (const p of existingParticipants) {
-        const { data: otherParticipant } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id")
-          .eq("conversation_id", p.conversation_id)
-          .eq("user_id", selectedUser)
-          .single();
-
-        if (otherParticipant) {
-          // Check if it's a DM
-          const { data: conv } = await supabase
-            .from("conversations")
-            .select("type")
-            .eq("id", p.conversation_id)
-            .eq("type", "dm")
+      if (existingParticipants) {
+        for (const p of existingParticipants) {
+          const { data: otherParticipant } = await supabase
+            .from("conversation_participants")
+            .select("conversation_id")
+            .eq("conversation_id", p.conversation_id)
+            .eq("user_id", selectedUsers[0])
             .single();
 
-          if (conv) {
-            existingConvId = p.conversation_id;
-            break;
+          if (otherParticipant) {
+            const { data: conv } = await supabase
+              .from("conversations")
+              .select("type")
+              .eq("id", p.conversation_id)
+              .eq("type", "dm")
+              .single();
+
+            if (conv) {
+              existingConvId = p.conversation_id;
+              break;
+            }
           }
         }
       }
-    }
 
-    let conversationId = existingConvId;
-
-    if (!conversationId) {
-      // Create new conversation
-      const { data: newConv, error: convError } = await supabase
-        .from("conversations")
-        .insert({
-          type: "dm",
-          created_by: currentUserId,
-        })
-        .select()
-        .single();
-
-      if (convError || !newConv) {
-        console.error("Error creating conversation:", convError);
-        setIsLoading(false);
+      if (existingConvId) {
+        // Send to existing DM
+        await supabase.from("messages").insert({
+          conversation_id: existingConvId,
+          sender_id: currentUserId,
+          content: message.trim(),
+        });
+        window.location.href = `/messaging/${existingConvId}`;
         return;
       }
-
-      conversationId = newConv.id;
-
-      // Add participants
-      await supabase.from("conversation_participants").insert([
-        { conversation_id: conversationId, user_id: currentUserId },
-        { conversation_id: conversationId, user_id: selectedUser },
-      ]);
     }
 
-    // Send message
-    const { error: msgError } = await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      sender_id: currentUserId,
-      content: message.trim(),
-    });
+    // Create new conversation
+    const { data: newConv, error: convError } = await supabase
+      .from("conversations")
+      .insert({
+        type: mode === "group" ? "group" : "dm",
+        title: mode === "group" ? groupName.trim() || null : null,
+        created_by: currentUserId,
+      })
+      .select()
+      .single();
 
-    if (msgError) {
-      console.error("Error sending message:", msgError);
+    if (convError || !newConv) {
+      console.error("Error creating conversation:", convError);
       setIsLoading(false);
       return;
     }
 
-    // Navigate to conversation
-    window.location.href = `/messaging/${conversationId}`;
+    // Add all participants (including self)
+    const participantInserts = [
+      { conversation_id: newConv.id, user_id: currentUserId },
+      ...selectedUsers.map((uid) => ({
+        conversation_id: newConv.id,
+        user_id: uid,
+      })),
+    ];
+
+    await supabase.from("conversation_participants").insert(participantInserts);
+
+    // Send first message
+    await supabase.from("messages").insert({
+      conversation_id: newConv.id,
+      sender_id: currentUserId,
+      content: message.trim(),
+    });
+
+    window.location.href = `/messaging/${newConv.id}`;
   };
 
   return (
@@ -435,29 +546,94 @@ function NewMessageModal({
       <div className="absolute inset-0 bg-foreground/60" onClick={onClose} />
 
       <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
-        <h2 className="text-xl font-bold">New Message</h2>
+        <h2 className="text-xl font-bold">
+          {mode === "group" ? "New Group Chat" : "New Message"}
+        </h2>
         <p className="mt-1 font-mono text-sm text-muted-foreground">
-          Start a conversation with a team member.
+          {mode === "group"
+            ? "Add members and start a group conversation."
+            : "Start a conversation with a team member."}
         </p>
 
         <div className="mt-6 space-y-4">
-          {/* User Select */}
+          {/* Group name (group mode only) */}
+          {mode === "group" && (
+            <div className="space-y-2">
+              <label className="font-mono text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Group Name (optional)
+              </label>
+              <input
+                type="text"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="e.g. Project Alpha Team"
+                className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
+              />
+            </div>
+          )}
+
+          {/* Selected users chips */}
+          {selectedUsers.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {getSelectedUserNames().map((name, i) => (
+                <span
+                  key={selectedUsers[i]}
+                  className="flex items-center gap-1 rounded-full border-2 border-border bg-background px-3 py-1 font-mono text-xs"
+                >
+                  {name}
+                  <button
+                    onClick={() => removeUser(selectedUsers[i])}
+                    className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                  >
+                    <X className="h-3 w-3" strokeWidth={2} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* User search + select */}
           <div className="space-y-2">
             <label className="font-mono text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              To
+              {mode === "group"
+                ? `Add Members (${selectedUsers.length} selected)`
+                : "To"}
             </label>
-            <select
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
-            >
-              <option value="">Select a person...</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name || u.username}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search team members..."
+                className="w-full rounded-xl border-2 border-border bg-background py-3 pl-10 pr-4 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
+              />
+            </div>
+            <div className="max-h-36 overflow-y-auto rounded-xl border-2 border-border">
+              {filteredUsers.length === 0 ? (
+                <p className="p-3 text-center font-mono text-xs text-muted-foreground">
+                  No users found
+                </p>
+              ) : (
+                filteredUsers.slice(0, 10).map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => toggleUser(u.id)}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-background font-mono text-xs font-bold">
+                      {(u.full_name || u.username).slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{u.full_name || u.username}</p>
+                      <p className="font-mono text-[10px] text-muted-foreground">
+                        @{u.username}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
 
           {/* Message */}
@@ -486,10 +662,19 @@ function NewMessageModal({
           </Button>
           <Button
             onClick={handleSend}
-            disabled={!selectedUser || !message.trim() || isLoading}
+            disabled={
+              selectedUsers.length === 0 ||
+              !message.trim() ||
+              isLoading ||
+              (mode === "group" && selectedUsers.length < 2)
+            }
             className="border-2 border-foreground bg-foreground text-background shadow-retro disabled:opacity-50"
           >
-            {isLoading ? "Sending..." : "Send"}
+            {isLoading
+              ? "Creating..."
+              : mode === "group"
+                ? "Create Group"
+                : "Send"}
           </Button>
         </div>
       </div>
