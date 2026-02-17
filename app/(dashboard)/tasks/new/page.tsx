@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save } from "lucide-react";
@@ -21,7 +21,7 @@ interface UserProfile {
   email: string;
 }
 
-export default function NewTaskPage() {
+function TaskForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -314,5 +314,22 @@ export default function NewTaskPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
+      <div className="h-96 animate-pulse rounded-2xl border-2 border-border bg-card" />
+    </div>
+  );
+}
+
+export default function NewTaskPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <TaskForm />
+    </Suspense>
   );
 }

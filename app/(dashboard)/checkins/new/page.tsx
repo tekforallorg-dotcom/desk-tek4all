@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Smile, Meh, Frown, ThumbsUp } from "lucide-react";
@@ -15,7 +15,7 @@ const MOODS = [
   { value: "struggling", label: "Struggling", icon: Frown, color: "border-orange-500 bg-orange-50 text-orange-700" },
 ];
 
-export default function NewCheckinPage() {
+function CheckinForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -256,6 +256,23 @@ export default function NewCheckinPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
+      <div className="h-96 animate-pulse rounded-2xl border-2 border-border bg-card" />
+    </div>
+  );
+}
+
+export default function NewCheckinPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <CheckinForm />
+    </Suspense>
   );
 }
 
