@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ThreadMessages from "@/components/thread-messages";
+import Subtasks from "@/components/subtasks";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -530,6 +532,9 @@ export default function TaskDetailPage() {
             </p>
           </div>
 
+          {/* Subtasks */}
+          <Subtasks taskId={task.id} />
+
           {/* Quick Edit */}
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <div className="flex items-center justify-between">
@@ -588,6 +593,7 @@ export default function TaskDetailPage() {
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <h2 className="font-bold">Activity</h2>
 
+
             {/* New Update Input */}
             <div className="mt-4">
               <textarea
@@ -643,8 +649,8 @@ export default function TaskDetailPage() {
               )}
             </div>
           </div>
+          <ThreadMessages taskId={task.id} title="Discussion" />
         </div>
-
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Assignees */}

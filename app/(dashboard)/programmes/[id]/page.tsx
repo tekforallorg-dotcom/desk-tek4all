@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import ThreadMessages from "@/components/thread-messages";
 import {
   ArrowLeft,
   Edit,
@@ -567,6 +568,8 @@ export default function ProgrammeDetailPage() {
               </div>
             )}
           </div>
+           {/* Programme Discussion Thread */}
+          <ThreadMessages programmeId={programme.id} title="Programme Discussion" />
         </div>
 
         {/* Sidebar */}

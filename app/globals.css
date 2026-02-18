@@ -308,3 +308,44 @@
   border-color: #B0B0B0 !important;
   box-shadow: none !important;
 }
+.dark {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 98%;
+
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 98%;
+
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 98%;
+
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 7%;
+
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 98%;
+
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 65%;
+
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 98%;
+
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border: 0 0% 20%;
+  --input: 0 0% 20%;
+  --ring: 0 0% 80%;
+}
+
+.dark .shadow-retro {
+  box-shadow: 3px 3px 0 0 hsl(0 0% 30%);
+}
+
+.dark .shadow-retro-sm {
+  box-shadow: 2px 2px 0 0 hsl(0 0% 30%);
+}
+
+.dark .shadow-retro-lg {
+  box-shadow: 5px 5px 0 0 hsl(0 0% 30%);
+}

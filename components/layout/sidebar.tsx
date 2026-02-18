@@ -19,6 +19,7 @@ import {
   Activity,
   CalendarDays, 
   BarChart3,
+  FileDown,
   HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -88,6 +89,12 @@ const navigation = [
     href: "/admin",
     icon: TowerControl,
   },
+  {
+  name: "Reports",
+  href: "/reports",
+  icon: FileDown,  // import from lucide-react
+},
+
 ];
 
 interface SidebarProps {

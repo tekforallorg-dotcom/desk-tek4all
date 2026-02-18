@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/lib/auth";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -24,7 +25,7 @@ import {
   Link2,
   Eye,
   EyeOff,
-  MessageCircle,
+  Repeat,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -42,6 +43,10 @@ interface CalendarEvent {
   meeting_platform: string | null;
   visibility: string;
   color: string;
+  recurrence: string | null;
+  recurrence_label?: string;
+  is_recurring_instance?: boolean;
+  original_event_id?: string;
   programme_id: string | null;
   created_by: string;
   created_at: string;
@@ -81,7 +86,6 @@ interface UserOption {
   id: string;
   full_name: string;
   email: string;
- 
 }
 
 type ViewMode = "day" | "week" | "month";
@@ -94,6 +98,15 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+const RECURRENCE_OPTIONS = [
+  { value: "none", label: "Does not repeat" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Every 2 weeks" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 function fmt(d: Date) {
   return d.toISOString().split("T")[0];
@@ -147,18 +160,15 @@ function getMonthDays(d: Date) {
   const first = startOfMonth(d);
   const last = endOfMonth(d);
   const days: Date[] = [];
-  // Pad start
   const startDay = first.getDay();
   for (let i = startDay - 1; i >= 0; i--) {
     const pad = new Date(first);
     pad.setDate(pad.getDate() - i - 1);
     days.push(pad);
   }
-  // Month days
   for (let i = 1; i <= last.getDate(); i++) {
     days.push(new Date(d.getFullYear(), d.getMonth(), i));
   }
-  // Pad end to complete grid (6 rows)
   while (days.length < 42) {
     const pad = new Date(last);
     pad.setDate(pad.getDate() + (days.length - startDay - last.getDate() + 1));
@@ -204,12 +214,12 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDetail, setShowEventDetail] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [allUsers, setAllUsers] = useState<UserOption[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showMobileSummary, setShowMobileSummary] = useState(false);
-
-  // ─── Data range based on view ──────────────────────────────────
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { rangeStart, rangeEnd } = useMemo(() => {
     const d = currentDate;
@@ -223,7 +233,6 @@ export default function CalendarPage() {
     if (view === "week") {
       return { rangeStart: startOfWeek(d), rangeEnd: endOfWeek(d) };
     }
-    // Month: extend to cover padded days
     const ms = startOfMonth(d);
     const me = endOfMonth(d);
     const padStart = new Date(ms);
@@ -233,8 +242,6 @@ export default function CalendarPage() {
     padEnd.setHours(23, 59, 59, 999);
     return { rangeStart: padStart, rangeEnd: padEnd };
   }, [currentDate, view]);
-
-  // ─── Fetch data ────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -259,23 +266,6 @@ export default function CalendarPage() {
     fetchData();
   }, [fetchData]);
 
-  // Fetch all users for participant picker
-  useEffect(() => {
-    async function loadUsers() {
-      try {
-        const res = await fetch("/api/search?q=*");
-        if (!res.ok) {
-          // Fallback: fetch from calendar events participants
-          return;
-        }
-      } catch {}
-      // Direct supabase query via a simple endpoint or reuse
-    }
-    // We'll load users in the modal instead
-  }, []);
-
-  // ─── Navigation ────────────────────────────────────────────────
-
   function navigate(dir: number) {
     const d = new Date(currentDate);
     if (view === "day") d.setDate(d.getDate() + dir);
@@ -288,8 +278,6 @@ export default function CalendarPage() {
     setCurrentDate(new Date());
     setSelectedDate(new Date());
   }
-
-  // ─── Events for a specific day ─────────────────────────────────
 
   function getEventsForDay(day: Date) {
     return events.filter((e) => {
@@ -308,8 +296,6 @@ export default function CalendarPage() {
     const ds = fmt(day);
     return programmeDeadlines.filter((p) => p.end_date === ds);
   }
-
-  // ─── Summary data ──────────────────────────────────────────────
 
   const summaryData = useMemo(() => {
     const totalEvents = events.length;
@@ -339,11 +325,11 @@ export default function CalendarPage() {
     };
   }, [events, taskDeadlines, programmeDeadlines, user?.id]);
 
-  // ─── RSVP ──────────────────────────────────────────────────────
-
   async function handleRsvp(eventId: string, status: string) {
+    // For recurring instances, use original event ID
+    const actualId = eventId.includes("_") ? eventId.split("_")[0] : eventId;
     try {
-      const res = await fetch(`/api/calendar/${eventId}/rsvp`, {
+      const res = await fetch(`/api/calendar/${actualId}/rsvp`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -361,43 +347,48 @@ export default function CalendarPage() {
     }
   }
 
-  // ─── Delete event ──────────────────────────────────────────────
-
   async function handleDelete(eventId: string) {
-    if (!confirm("Delete this event? This cannot be undone.")) return;
-    try {
-      const res = await fetch(`/api/calendar/${eventId}`, { method: "DELETE" });
-      if (res.ok) {
-        showToast("Event deleted");
-        setShowEventDetail(false);
-        setSelectedEvent(null);
-        fetchData();
-      }
-    } catch (err) {
-      console.error("Delete error:", err);
-    }
-  }
+  // For recurring instances, delete the original event
+  const actualId = eventId.includes("_") ? eventId.split("_")[0] : eventId;
+  setEventToDelete(actualId);
+  setShowDeleteConfirm(true);
+}
 
-  // ─── Toast ─────────────────────────────────────────────────────
+async function confirmDelete() {
+  if (!eventToDelete) return;
+  setIsDeleting(true);
+  
+  try {
+    const res = await fetch(`/api/calendar/${eventToDelete}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Event deleted");
+      setShowEventDetail(false);
+      setSelectedEvent(null);
+      fetchData();
+    }
+  } catch (err) {
+    console.error("Delete error:", err);
+  } finally {
+    setIsDeleting(false);
+    setShowDeleteConfirm(false);
+    setEventToDelete(null);
+  }
+}
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   }
 
-  // ─── View header label ─────────────────────────────────────────
-
   const headerLabel = useMemo(() => {
     if (view === "day") return fmtFull(currentDate.toISOString());
     if (view === "week") {
       const ws = startOfWeek(currentDate);
       const we = endOfWeek(currentDate);
-      return `${fmtDate(ws.toISOString())} \u2014 ${fmtDate(we.toISOString())}, ${we.getFullYear()}`;
+      return `${fmtDate(ws.toISOString())} — ${fmtDate(we.toISOString())}, ${we.getFullYear()}`;
     }
     return `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
   }, [currentDate, view]);
-
-  // ─── Scroll to current hour on day/week ────────────────────────
 
   useEffect(() => {
     if ((view === "day" || view === "week") && scrollRef.current) {
@@ -407,10 +398,8 @@ export default function CalendarPage() {
     }
   }, [view]);
 
-  // ─── Render ────────────────────────────────────────────────────
-
   return (
- <div className="flex flex-col" style={{ minHeight: "calc(100vh - 5rem)" }}>
+    <div className="flex flex-col" style={{ minHeight: "calc(100vh - 5rem)" }}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
@@ -424,7 +413,6 @@ export default function CalendarPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* View toggle */}
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(["day", "week", "month"] as ViewMode[]).map((v) => (
               <button
@@ -441,7 +429,6 @@ export default function CalendarPage() {
             ))}
           </div>
 
-          {/* Navigation */}
           <div className="flex items-center gap-1">
             <button
               onClick={() => navigate(-1)}
@@ -463,7 +450,6 @@ export default function CalendarPage() {
             </button>
           </div>
 
-          {/* Create event */}
           <button
             onClick={() => {
               setEditingEvent(null);
@@ -475,7 +461,6 @@ export default function CalendarPage() {
             New Event
           </button>
 
-          {/* Mobile summary toggle */}
           <button
             onClick={() => setShowMobileSummary(true)}
             className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted transition-colors"
@@ -488,7 +473,6 @@ export default function CalendarPage() {
 
       {/* Main content */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Calendar area */}
         <div className="flex-1 overflow-auto" ref={scrollRef}>
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
@@ -562,7 +546,7 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Summary Panel - Mobile Overlay */}
+      {/* Mobile Summary Overlay */}
       {showMobileSummary && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
@@ -632,7 +616,11 @@ export default function CalendarPage() {
           }}
           onRsvp={(status) => handleRsvp(selectedEvent.id, status)}
           onEdit={() => {
-            setEditingEvent(selectedEvent);
+            // For recurring instances, edit the original
+            const eventToEdit = selectedEvent.is_recurring_instance
+              ? { ...selectedEvent, id: selectedEvent.original_event_id || selectedEvent.id }
+              : selectedEvent;
+            setEditingEvent(eventToEdit);
             setShowEventDetail(false);
             setShowCreateModal(true);
           }}
@@ -646,7 +634,22 @@ export default function CalendarPage() {
           {toast}
         </div>
       )}
-    </div>
+
+      {/* ADD DELETE CONFIRM DIALOG HERE */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setEventToDelete(null);
+        }}
+        onConfirm={confirmDelete}
+        title="Delete Event?"
+        description="This action cannot be undone. The event will be permanently deleted."
+        confirmText="Delete"
+        variant="danger"
+        isLoading={isDeleting}
+      />
+    </div> 
   );
 }
 
@@ -676,7 +679,6 @@ function MonthView({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Day headers */}
       <div className="grid grid-cols-7 border-b border-border">
         {DAYS.map((d) => (
           <div
@@ -688,7 +690,6 @@ function MonthView({
         ))}
       </div>
 
-      {/* Day grid */}
       <div className="grid grid-cols-7 flex-1 auto-rows-fr">
         {days.map((day, i) => {
           const isCurrentMonth = day.getMonth() === currentDate.getMonth();
@@ -703,11 +704,10 @@ function MonthView({
             <div
               key={i}
               onClick={() => onSelectDate(day)}
-              className={`border-b border-r border-border p-1 min-h-[80px] cursor-pointer transition-colors group ${
+              className={`border-b border-r border-border p-1 min-h-20 cursor-pointer transition-colors group ${
                 isCurrentMonth ? "bg-background" : "bg-muted/20"
               } ${isSelected ? "ring-2 ring-inset ring-foreground/30" : ""} hover:bg-muted/30`}
             >
-              {/* Date number */}
               <div className="flex items-center justify-between mb-0.5">
                 <span
                   className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${
@@ -727,7 +727,6 @@ function MonthView({
                 )}
               </div>
 
-              {/* Events (max 3 visible) */}
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 2).map((ev) => (
                   <button
@@ -736,14 +735,19 @@ function MonthView({
                       e.stopPropagation();
                       onEventClick(ev);
                     }}
-                    className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80"
+                    className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80 flex items-center gap-0.5"
                     style={{
                       backgroundColor: (EVENT_COLORS[ev.event_type] || ev.color) + "18",
                       color: EVENT_COLORS[ev.event_type] || ev.color,
                       borderLeft: `2px solid ${EVENT_COLORS[ev.event_type] || ev.color}`,
                     }}
                   >
-                    {ev.all_day ? "" : fmtTime(ev.start_time) + " "}{ev.title}
+                    {ev.recurrence && ev.recurrence !== "none" && (
+                      <Repeat className="h-2.5 w-2.5 shrink-0" />
+                    )}
+                    <span className="truncate">
+                      {ev.all_day ? "" : fmtTime(ev.start_time) + " "}{ev.title}
+                    </span>
                   </button>
                 ))}
                 {dayTasks.slice(0, Math.max(0, 3 - dayEvents.length)).map((t) => (
@@ -806,7 +810,6 @@ function WeekView({
 
   return (
     <div className="flex flex-col">
-      {/* Day headers */}
       <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border sticky top-0 bg-background z-10">
         <div className="border-r border-border" />
         {weekDays.map((d, i) => {
@@ -835,7 +838,6 @@ function WeekView({
         })}
       </div>
 
-      {/* Hour grid */}
       <div className="relative">
         {HOURS.map((hour) => (
           <div
@@ -859,7 +861,6 @@ function WeekView({
           </div>
         ))}
 
-        {/* Event overlays */}
         {events
           .filter((e) => !e.all_day)
           .map((ev) => {
@@ -873,7 +874,6 @@ function WeekView({
             const duration = Math.max(endMinutes - startMinutes, 30);
             const top = (startMinutes / 60) * 64;
             const height = (duration / 60) * 64;
-            const left = `calc(60px + ${(dayIndex / 7) * 100}% * (7/7))`;
 
             return (
               <button
@@ -891,7 +891,12 @@ function WeekView({
                   backgroundColor: EVENT_COLORS[ev.event_type] || ev.color || "#000",
                 }}
               >
-                <div className="truncate">{ev.title}</div>
+                <div className="truncate flex items-center gap-0.5">
+                  {ev.recurrence && ev.recurrence !== "none" && (
+                    <Repeat className="h-2.5 w-2.5 shrink-0" />
+                  )}
+                  {ev.title}
+                </div>
                 <div className="truncate opacity-80">
                   {fmtTime(ev.start_time)}
                 </div>
@@ -929,7 +934,6 @@ function DayView({
 
   return (
     <div className="flex flex-col">
-      {/* All-day events + tasks */}
       {(allDayEvents.length > 0 || dayTasks.length > 0) && (
         <div className="border-b border-border px-4 py-2 space-y-1">
           <div className="text-[10px] text-muted-foreground uppercase font-medium mb-1">
@@ -944,7 +948,12 @@ function DayView({
                 backgroundColor: EVENT_COLORS[ev.event_type] || ev.color,
               }}
             >
-              {ev.title}
+              <span className="flex items-center gap-1">
+                {ev.recurrence && ev.recurrence !== "none" && (
+                  <Repeat className="h-3 w-3" />
+                )}
+                {ev.title}
+              </span>
             </button>
           ))}
           {dayTasks.map((t) => (
@@ -966,7 +975,6 @@ function DayView({
         </div>
       )}
 
-      {/* Hour grid */}
       <div className="relative">
         {HOURS.map((hour) => (
           <div
@@ -981,7 +989,6 @@ function DayView({
           </div>
         ))}
 
-        {/* Event overlays */}
         {timedEvents.map((ev) => {
           const start = new Date(ev.start_time);
           const end = new Date(ev.end_time);
@@ -1005,16 +1012,20 @@ function DayView({
                 backgroundColor: EVENT_COLORS[ev.event_type] || ev.color || "#000",
               }}
             >
-              <div className="font-semibold truncate">{ev.title}</div>
+              <div className="font-semibold truncate flex items-center gap-1">
+                {ev.recurrence && ev.recurrence !== "none" && (
+                  <Repeat className="h-3 w-3 shrink-0" />
+                )}
+                {ev.title}
+              </div>
               <div className="opacity-80 text-[10px]">
-                {fmtTime(ev.start_time)} \u2013 {fmtTime(ev.end_time)}
-                {ev.location && ` \u2022 ${ev.location}`}
+                {fmtTime(ev.start_time)} – {fmtTime(ev.end_time)}
+                {ev.location && ` • ${ev.location}`}
               </div>
             </button>
           );
         })}
 
-        {/* Current time indicator */}
         {isSameDay(currentDate, new Date()) && (
           <div
             className="absolute left-16 right-0 border-t-2 border-red-500 z-20 pointer-events-none"
@@ -1022,7 +1033,7 @@ function DayView({
               top: `${((new Date().getHours() * 60 + new Date().getMinutes()) / 60) * 64}px`,
             }}
           >
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500 -mt-[5px] -ml-[5px]" />
+            <div className="w-2.5 h-2.5 rounded-full bg-red-500 -mt-1.5 -ml-1.5" />
           </div>
         )}
       </div>
@@ -1060,7 +1071,6 @@ function SummaryPanel({
   const viewLabel =
     view === "day" ? "Today" : view === "week" ? "This Week" : "This Month";
 
-  // For day view, filter to selected day
   const filteredEvents = useMemo(() => {
     if (view === "day") {
       return events.filter((e) =>
@@ -1080,19 +1090,17 @@ function SummaryPanel({
 
   return (
     <div className="p-4 space-y-5">
-      {/* Summary title */}
       <div>
         <h3 className="text-sm font-display font-bold">{viewLabel} Summary</h3>
         <p className="text-[10px] text-muted-foreground mt-0.5">
           {view === "day"
             ? fmtFull(selectedDate.toISOString())
             : view === "week"
-            ? `${fmtDate(startOfWeek(currentDate).toISOString())} \u2013 ${fmtDate(endOfWeek(currentDate).toISOString())}`
+            ? `${fmtDate(startOfWeek(currentDate).toISOString())} – ${fmtDate(endOfWeek(currentDate).toISOString())}`
             : `${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
         </p>
       </div>
 
-      {/* Stats grid */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-border p-3">
           <div className="text-lg font-bold font-display">
@@ -1120,7 +1128,6 @@ function SummaryPanel({
         </div>
       </div>
 
-      {/* Pending invites */}
       {summary.pendingInvites.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
@@ -1135,12 +1142,15 @@ function SummaryPanel({
               >
                 <button
                   onClick={() => onEventClick(ev)}
-                  className="text-xs font-semibold hover:underline text-left w-full"
+                  className="text-xs font-semibold hover:underline text-left w-full flex items-center gap-1"
                 >
+                  {ev.recurrence && ev.recurrence !== "none" && (
+                    <Repeat className="h-3 w-3 text-muted-foreground" />
+                  )}
                   {ev.title}
                 </button>
                 <div className="text-[10px] text-muted-foreground">
-                  {fmtDate(ev.start_time)} \u2022 {fmtTime(ev.start_time)}
+                  {fmtDate(ev.start_time)} • {fmtTime(ev.start_time)}
                 </div>
                 <div className="flex gap-1.5">
                   <button
@@ -1171,7 +1181,6 @@ function SummaryPanel({
         </div>
       )}
 
-      {/* Upcoming events */}
       {upcomingEvents.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold mb-2">Upcoming</h4>
@@ -1190,14 +1199,17 @@ function SummaryPanel({
                     }}
                   />
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold truncate">
+                    <div className="text-xs font-semibold truncate flex items-center gap-1">
+                      {ev.recurrence && ev.recurrence !== "none" && (
+                        <Repeat className="h-3 w-3 text-muted-foreground shrink-0" />
+                      )}
                       {ev.title}
                     </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {fmtTime(ev.start_time)} \u2013 {fmtTime(ev.end_time)}
+                      {fmtTime(ev.start_time)} – {fmtTime(ev.end_time)}
                       {ev.meeting_platform && (
                         <span className="ml-1">
-                          \u2022{" "}
+                          •{" "}
                           {PLATFORM_ICONS[ev.meeting_platform]?.label ||
                             "Online"}
                         </span>
@@ -1211,7 +1223,6 @@ function SummaryPanel({
         </div>
       )}
 
-      {/* Task deadlines */}
       {summary.upcomingTasks.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
@@ -1240,7 +1251,6 @@ function SummaryPanel({
         </div>
       )}
 
-      {/* Programme deadlines */}
       {summary.progDeadlines.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
@@ -1306,7 +1316,6 @@ function EventDetail({
         onClick={onClose}
       />
       <div className="relative w-full max-w-md bg-background shadow-xl overflow-y-auto animate-fade-in">
-        {/* Header */}
         <div
           className="p-6 text-white"
           style={{
@@ -1314,9 +1323,17 @@ function EventDetail({
           }}
         >
           <div className="flex items-start justify-between mb-3">
-            <span className="text-[10px] uppercase tracking-wider opacity-80">
-              {event.event_type}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider opacity-80">
+                {event.event_type}
+              </span>
+              {event.recurrence && event.recurrence !== "none" && (
+                <span className="flex items-center gap-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded">
+                  <Repeat className="h-2.5 w-2.5" />
+                  {event.recurrence_label || event.recurrence}
+                </span>
+              )}
+            </div>
             <button
               onClick={onClose}
               className="p-1 rounded-lg hover:bg-white/20 transition-colors"
@@ -1328,19 +1345,22 @@ function EventDetail({
           <div className="flex items-center gap-2 mt-2 text-sm opacity-90">
             <Clock className="h-3.5 w-3.5" />
             {event.all_day ? (
-              <span>All Day \u2022 {fmtFull(event.start_time)}</span>
+              <span>All Day • {fmtFull(event.start_time)}</span>
             ) : (
               <span>
-                {fmtFull(event.start_time)} \u2022 {fmtTime(event.start_time)}{" "}
-                \u2013 {fmtTime(event.end_time)}
+                {fmtFull(event.start_time)} • {fmtTime(event.start_time)}{" "}
+                – {fmtTime(event.end_time)}
               </span>
             )}
           </div>
+          {event.is_recurring_instance && (
+            <div className="mt-2 text-xs opacity-75">
+              This is part of a recurring event
+            </div>
+          )}
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-5">
-          {/* RSVP for invited users */}
           {myParticipant && myParticipant.status === "pending" && (
             <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
               <div className="text-xs font-semibold text-amber-800 mb-2">
@@ -1389,7 +1409,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Description */}
           {event.description && (
             <div>
               <div className="text-[10px] text-muted-foreground uppercase font-medium mb-1">
@@ -1401,7 +1420,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Location */}
           {event.location && (
             <div className="flex items-center gap-2 text-sm">
               <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1409,7 +1427,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Meeting link */}
           {event.meeting_link && (
             <div className="flex items-center gap-2">
               <Video className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1431,7 +1448,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Visibility */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {event.visibility === "everyone" ? (
               <>
@@ -1446,7 +1462,6 @@ function EventDetail({
             )}
           </div>
 
-          {/* Programme */}
           {event.programme && (
             <div className="flex items-center gap-2 text-sm">
               <Briefcase className="h-4 w-4 text-muted-foreground" />
@@ -1454,7 +1469,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Creator */}
           {event.creator && (
             <div className="flex items-center gap-2 text-sm">
               <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold">
@@ -1469,7 +1483,6 @@ function EventDetail({
             </div>
           )}
 
-          {/* Participants */}
           <div>
             <div className="text-[10px] text-muted-foreground uppercase font-medium mb-2">
               Participants ({event.participants.length})
@@ -1509,7 +1522,6 @@ function EventDetail({
             )}
           </div>
 
-          {/* Actions */}
           {canManage && (
             <div className="flex gap-2 pt-2 border-t border-border">
               <button
@@ -1524,7 +1536,7 @@ function EventDetail({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
               >
                 <Trash2 className="h-3 w-3" />
-                Delete
+                Delete {event.is_recurring_instance && "All"}
               </button>
             </div>
           )}
@@ -1616,6 +1628,9 @@ function EventModal({
   const [visibility, setVisibility] = useState(
     event?.visibility || "everyone"
   );
+  const [recurrence, setRecurrence] = useState(
+    event?.recurrence || "none"
+  );
   const [selectedUsers, setSelectedUsers] = useState<string[]>(
     event?.participants.map((p) => p.user?.id || "").filter(Boolean) || []
   );
@@ -1624,36 +1639,19 @@ function EventModal({
   const [isSaving, setIsSaving] = useState(false);
   const [showUserPicker, setShowUserPicker] = useState(false);
 
-  // Load users
   useEffect(() => {
     async function loadUsers() {
       try {
         const res = await fetch("/api/calendar/users");
-        if (!res.ok) {
-          // Fallback: use search API
-          const searchRes = await fetch("/api/search?q=a");
-          if (searchRes.ok) {
-            const data = await searchRes.json();
-            const users = data.results
-              .filter((r: any) => r.type === "user")
-              .map((r: any) => ({
-                id: r.id,
-                full_name: r.title,
-                email: r.subtitle.split(" \u2022 ")[1] || "",
-                avatar_url: null,
-              }));
-            setAllUsers(users);
-          }
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          setAllUsers(data);
         }
-        const data = await res.json();
-        setAllUsers(data);
       } catch {}
     }
     loadUsers();
   }, []);
 
-  // Auto-detect platform from link
   useEffect(() => {
     if (!meetingLink) {
       setMeetingPlatform("");
@@ -1681,6 +1679,7 @@ function EventModal({
       meeting_link: meetingLink.trim() || null,
       meeting_platform: meetingPlatform || null,
       visibility,
+      recurrence,
       participant_ids: selectedUsers,
     };
 
@@ -1749,7 +1748,7 @@ function EventModal({
               <label className="text-xs font-medium text-muted-foreground block mb-1">
                 Type
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {["meeting", "event", "deadline", "reminder"].map((t) => (
                   <button
                     key={t}
@@ -1801,6 +1800,25 @@ function EventModal({
                   className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
                 />
               </div>
+            </div>
+
+            {/* Recurrence */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                <Repeat className="inline h-3 w-3 mr-1" />
+                Repeat
+              </label>
+              <select
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
+              >
+                {RECURRENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Description */}
@@ -1898,6 +1916,7 @@ function EventModal({
                     setShowUserPicker(true);
                   }}
                   onFocus={() => setShowUserPicker(true)}
+                  onBlur={() => setTimeout(() => setShowUserPicker(false), 200)}
                   placeholder="Search by name or email..."
                   className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
                 />
@@ -1943,7 +1962,6 @@ function EventModal({
                 )}
               </div>
 
-              {/* Selected users */}
               {selectedUsers.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {selectedUsers.map((uid) => {

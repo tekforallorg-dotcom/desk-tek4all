@@ -166,7 +166,7 @@ export default function SignInPage() {
 
       {/* Bottom branding */}
       <p className="mt-12 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        © 2024 Tek4All Foundation
+        © 2026 Tek4All 
       </p>
     </div>
   );
