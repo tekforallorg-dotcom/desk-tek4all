@@ -10,9 +10,11 @@ import {
   Plus,
   ArrowRight,
   Calendar,
+  CalendarDays,
   Shield,
   Mail,
   Activity,
+  Video,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -46,12 +48,24 @@ interface AuditLog {
   created_at: string;
 }
 
+interface CalendarEvent {
+  id: string;
+  title: string;
+  event_type: string;
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  meeting_link: string | null;
+  meeting_platform: string | null;
+}
+
 export default function DashboardPage() {
   const { profile, user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
   const [recentActivity, setRecentActivity] = useState<AuditLog[]>([]);
   const [nameMap, setNameMap] = useState<Map<string, string>>(new Map());
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -174,6 +188,20 @@ export default function DashboardPage() {
         setNameMap(names);
       }
 
+      // ── 8. Fetch upcoming calendar events ───────────────────────────
+      const weekFromNowCal = new Date();
+      weekFromNowCal.setDate(weekFromNowCal.getDate() + 7);
+
+      const { data: calendarEvents } = await supabase
+        .from("calendar_events")
+        .select("id, title, event_type, start_time, end_time, all_day, meeting_link, meeting_platform")
+        .gte("start_time", now.toISOString())
+        .lte("start_time", weekFromNowCal.toISOString())
+        .order("start_time", { ascending: true })
+        .limit(5);
+
+      setUpcomingEvents(calendarEvents || []);
+
       setIsLoading(false);
     };
 
@@ -277,6 +305,28 @@ export default function DashboardPage() {
       case "urgent":
       case "high":
         return "bg-foreground text-background";
+      default:
+        return "bg-muted text-muted-foreground";
+    }
+  };
+
+  const formatEventTime = (start: string, end: string, allDay: boolean) => {
+    if (allDay) return "All day";
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const startTime = startDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const endTime = endDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    return `${startTime} – ${endTime}`;
+  };
+
+  const getEventTypeStyle = (type: string) => {
+    switch (type) {
+      case "meeting":
+        return "bg-foreground text-background";
+      case "deadline":
+        return "bg-red-100 text-red-700";
+      case "reminder":
+        return "bg-amber-100 text-amber-700";
       default:
         return "bg-muted text-muted-foreground";
     }
@@ -448,6 +498,73 @@ export default function DashboardPage() {
               })
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Upcoming Events */}
+      <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
+            <CalendarDays className="h-5 w-5" strokeWidth={1.5} />
+            Upcoming Events
+          </h2>
+          <Link
+            href="/calendar"
+            className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+          >
+            View calendar
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {upcomingEvents.length === 0 ? (
+            <div className="py-8 text-center">
+              <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" strokeWidth={1.5} />
+              <p className="font-mono text-sm text-muted-foreground">
+                No upcoming events this week.
+              </p>
+              <Link href="/calendar">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 border-2 shadow-retro-sm"
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.5} />
+                  Create Event
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            upcomingEvents.map((event) => (
+              <Link key={event.id} href="/calendar">
+                <div className="group flex items-center justify-between rounded-xl border-2 border-border bg-background p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro-sm">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted">
+                      {event.meeting_link ? (
+                        <Video className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      ) : (
+                        <Calendar className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-card-foreground">
+                        {event.title}
+                      </p>
+                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                        {formatDate(event.start_time)} • {formatEventTime(event.start_time, event.end_time, event.all_day)}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`ml-3 shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${getEventTypeStyle(event.event_type)}`}
+                  >
+                    {event.event_type}
+                  </span>
+                </div>
+              </Link>
+            ))
+          )}
         </div>
       </div>
 

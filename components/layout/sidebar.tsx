@@ -17,6 +17,7 @@ import {
   Users,
   ClipboardCheck,
   Activity,
+  CalendarDays, 
   BarChart3,
   HardDrive,
 } from "lucide-react";
@@ -55,6 +56,11 @@ const navigation = [
     name: "Check-ins",
     href: "/checkins",
     icon: ClipboardCheck,
+  },
+  {
+    name: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
   },
   {
     name: "Shared Mail",
