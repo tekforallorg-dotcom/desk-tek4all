@@ -126,10 +126,10 @@ if (data) {
         const data = await response.json();
         setThreads(data.threads || []);
         
-        // Auto-analyze after fetching
-        if (data.threads && data.threads.length > 0) {
-          analyzeEmails(data.threads);
-        }
+       // Auto-analyze after fetching (admin/super_admin only to preserve Gemini quota)
+        if (data.threads && data.threads.length > 0 && (profile?.role === "admin" || profile?.role === "super_admin")) {
+        analyzeEmails(data.threads);
+      }
       } catch (err) {
         setError("Failed to load emails.");
         console.error(err);
@@ -223,7 +223,7 @@ const updatedThreads: EmailWithClassification[] = [...emailThreads];
     acc[cat] = (acc[cat] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-
+handleRefresh
   const topCategories = Object.entries(categoryBreakdown)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
