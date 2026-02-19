@@ -134,7 +134,7 @@ export async function DELETE(
     .eq("id", user.id)
     .single();
 
-  if (!profile || !["admin", "super_admin"].includes(profile.role)) {
+  if (!profile || profile.role !== "super_admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
