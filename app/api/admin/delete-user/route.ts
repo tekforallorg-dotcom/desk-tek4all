@@ -66,7 +66,25 @@ export async function POST(request: Request) {
       );
     }
 
-    // Delete auth user (cascades profile if FK is set, otherwise we clean up)
+   // Clean up ALL related data FIRST (FK constraints block auth deletion)
+    // Nullify references where we want to keep the record
+    await supabaseAdmin.from("attachments").update({ uploaded_by: null }).eq("uploaded_by", userId);
+    await supabaseAdmin.from("calendar_events").update({ created_by: null }).eq("created_by", userId);
+    await supabaseAdmin.from("tasks").update({ reviewed_by: null }).eq("reviewed_by", userId);
+    await supabaseAdmin.from("tasks").update({ evidence_submitted_by: null }).eq("evidence_submitted_by", userId);
+    await supabaseAdmin.from("subtasks").update({ created_by: null }).eq("created_by", userId);
+    await supabaseAdmin.from("task_dependencies").update({ created_by: null }).eq("created_by", userId);
+
+    // Delete records that belong to the user
+    await supabaseAdmin.from("event_participants").delete().eq("user_id", userId);
+    await supabaseAdmin.from("notifications").delete().eq("user_id", userId);
+    await supabaseAdmin.from("notifications").update({ actor_id: null }).eq("actor_id", userId);
+    await supabaseAdmin.from("group_members").delete().eq("user_id", userId);
+
+    // Now delete profile
+    await supabaseAdmin.from("profiles").delete().eq("id", userId);
+    
+    // Now delete auth user
     const { error: deleteError } =
       await supabaseAdmin.auth.admin.deleteUser(userId);
 
@@ -77,12 +95,6 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-
-    // Clean up profile row if it wasn't cascaded
-    await supabaseAdmin.from("profiles").delete().eq("id", userId);
-
-    // Clean up related data
-    await supabaseAdmin.from("group_members").delete().eq("user_id", userId);
 
     // Audit log
     await supabase.from("audit_logs").insert({
