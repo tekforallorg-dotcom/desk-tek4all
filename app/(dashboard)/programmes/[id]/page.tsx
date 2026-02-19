@@ -97,6 +97,7 @@ export default function ProgrammeDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showManageMembers, setShowManageMembers] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [isRefreshingMembers, setIsRefreshingMembers] = useState(false);
 
   /* ─── Fetch Members (reusable) ─────────────────────────────────────── */
@@ -250,6 +251,14 @@ export default function ProgrammeDetailPage() {
     }
 
     router.push("/programmes");
+  };
+
+const handleAddMembers = async () => {
+    if (!user?.id || !programme || selectedMemberIds.length === 0) return;
+    for (const id of selectedMemberIds) {
+      await handleAddMember(id);
+    }
+    setSelectedMemberIds([]);
   };
 
   const handleAddMember = async (userId: string) => {
@@ -757,51 +766,83 @@ export default function ProgrammeDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-foreground/60"
-            onClick={() => setShowManageMembers(false)}
+            onClick={() => { setShowManageMembers(false); setSelectedMemberIds([]); }}
           />
           <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
-            <h2 className="text-xl font-bold">Add Team Member</h2>
+            <h2 className="text-xl font-bold">Add Team Members</h2>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
-              Select someone to add to {programme.name}.
+              Select people to add to {programme.name}.
             </p>
-
             <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
               {availableUsers.length === 0 ? (
                 <p className="py-4 text-center font-mono text-sm text-muted-foreground">
                   All team members have been added.
                 </p>
               ) : (
-                availableUsers.map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => handleAddMember(u.id)}
-                    className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-left transition-all hover:border-foreground"
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
-                      {getInitials(u.full_name, u.username)}
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        {u.full_name || u.username}
-                      </p>
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {u.email}
-                      </p>
-                    </div>
-                  </button>
-                ))
+                availableUsers.map((u) => {
+                  const isSelected = selectedMemberIds.includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedMemberIds((prev) =>
+                          isSelected
+                            ? prev.filter((id) => id !== u.id)
+                            : [...prev, u.id]
+                        )
+                      }
+                      className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                        isSelected
+                          ? "border-foreground bg-muted"
+                          : "border-border hover:border-foreground"
+                      }`}
+                    >
+                      <div
+                        className={`flex h-5 w-5 items-center justify-center rounded border-2 text-xs ${
+                          isSelected
+                            ? "border-foreground bg-foreground text-background"
+                            : "border-border"
+                        }`}
+                      >
+                        {isSelected && "✓"}
+                      </div>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
+                        {getInitials(u.full_name, u.username)}
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          {u.full_name || u.username}
+                        </p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          {u.email}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
-
-            <div className="mt-4 flex justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowManageMembers(false)}
-                className="border-2"
-              >
-                Cancel
-              </Button>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="font-mono text-xs text-muted-foreground">
+                {selectedMemberIds.length} selected
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { setShowManageMembers(false); setSelectedMemberIds([]); }}
+                  className="border-2"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddMembers}
+                  disabled={selectedMemberIds.length === 0}
+                  className="border-2 border-foreground bg-foreground text-background shadow-retro hover:shadow-retro-lg disabled:opacity-50"
+                >
+                  Add ({selectedMemberIds.length})
+                </Button>
+              </div>
             </div>
           </div>
         </div>
