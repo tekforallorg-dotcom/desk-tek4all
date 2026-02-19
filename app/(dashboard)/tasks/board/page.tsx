@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -87,7 +87,45 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 type FilterType = "all" | "my_tasks";
 
-export default function TaskBoardPage() {
+// Loading skeleton for Suspense fallback
+function BoardSkeleton() {
+  return (
+    <div className="flex h-[calc(100vh-8rem)] flex-col">
+      <div className="flex flex-col gap-4 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="h-9 w-40 animate-pulse rounded bg-muted" />
+          <div className="mt-2 h-4 w-56 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-32 animate-pulse rounded-xl bg-muted" />
+          <div className="h-10 w-28 animate-pulse rounded-xl bg-muted" />
+        </div>
+      </div>
+      <div className="flex gap-2 pb-4">
+        <div className="h-8 w-24 animate-pulse rounded-lg bg-muted" />
+        <div className="h-8 w-24 animate-pulse rounded-lg bg-muted" />
+      </div>
+      <div className="flex flex-1 gap-4 overflow-hidden">
+        {COLUMNS.map((col) => (
+          <div
+            key={col.id}
+            className="flex w-72 shrink-0 flex-col rounded-2xl border-2 border-border bg-card animate-pulse"
+          >
+            <div className="h-12 border-b-2 border-border" />
+            <div className="flex-1 p-3 space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-24 rounded-xl bg-muted" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Main board content - uses useSearchParams
+function TaskBoardContent() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -451,7 +489,7 @@ export default function TaskBoardPage() {
 
       {/* Mobile scroll hint */}
       <div className="flex justify-center gap-1.5 pt-2 lg:hidden">
-        {COLUMNS.map((col, i) => (
+        {COLUMNS.map((col) => (
           <div
             key={col.id}
             className="h-1.5 w-6 rounded-full bg-border"
@@ -550,5 +588,14 @@ function TaskCard({
         </div>
       )}
     </div>
+  );
+}
+
+// Default export wraps content in Suspense
+export default function TaskBoardPage() {
+  return (
+    <Suspense fallback={<BoardSkeleton />}>
+      <TaskBoardContent />
+    </Suspense>
   );
 }
