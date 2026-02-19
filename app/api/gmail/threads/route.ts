@@ -1,25 +1,26 @@
+
+
 import { NextResponse } from "next/server";
 import { listThreads } from "@/lib/gmail";
 import { createClient } from "@/lib/supabase/server";
+import { checkSharedMailAccess } from "@/lib/gmail-access";
 
 export async function GET() {
   try {
     // Check auth
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if user has permission (admin/super_admin)
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    // Check permission: admin/super_admin role OR shared_mail_admin group
+    const { authorized } = await checkSharedMailAccess(supabase, user.id);
 
-    if (!profile || !["admin", "super_admin"].includes(profile.role)) {
+    if (!authorized) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

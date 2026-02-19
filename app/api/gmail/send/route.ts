@@ -1,53 +1,55 @@
+
 import { NextResponse } from "next/server";
-import { sendReply } from "@/lib/gmail";
 import { createClient } from "@/lib/supabase/server";
+import { classifyEmail } from "@/lib/gemini";
+import { checkSharedMailAccess } from "@/lib/gmail-access";
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check permission
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    // Check permission: admin/super_admin role OR shared_mail_admin group
+    const { authorized } = await checkSharedMailAccess(supabase, user.id);
 
-    if (!profile || !["admin", "super_admin"].includes(profile.role)) {
+    if (!authorized) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = await request.json();
-    const { threadId, to, subject, content } = body;
+    const { subject, from, body } = await request.json();
 
-    if (!threadId || !to || !subject || !content) {
+    if (!subject || !from || !body) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    await sendReply(threadId, to, subject, content);
+    const classification = await classifyEmail(subject, from, body);
 
     // Log the action
     await supabase.from("audit_logs").insert({
       user_id: user.id,
-      action: "email_reply_sent",
+      action: "email_classified",
       entity_type: "email",
-      entity_id: threadId,
-      details: { to, subject },
+      details: {
+        subject,
+        importance: classification.importance,
+        category: classification.category,
+      },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(classification);
   } catch (error) {
-    console.error("Error sending reply:", error);
+    console.error("Error classifying email:", error);
     return NextResponse.json(
-      { error: "Failed to send reply" },
+      { error: "Failed to classify email" },
       { status: 500 }
     );
   }
