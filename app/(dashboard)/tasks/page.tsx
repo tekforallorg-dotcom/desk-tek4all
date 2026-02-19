@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Plus, CheckSquare, Calendar, Flag, FolderKanban, List, LayoutGrid } from "lucide-react";
+import { Plus, CheckSquare, Calendar, Flag, FolderKanban, List, LayoutGrid, Lock, Link2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -18,11 +18,13 @@ interface Task {
   programme_id: string | null;
   created_at: string;
   programme?: { name: string } | null;
+  isBlockedByDependencies?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
   todo: "To Do",
   in_progress: "In Progress",
+  pending_review: "Pending Review",
   done: "Done",
   blocked: "Blocked",
 };
@@ -34,7 +36,7 @@ const PRIORITY_LABELS: Record<string, string> = {
   urgent: "Urgent",
 };
 
-type FilterType = "all" | "my_tasks" | "todo" | "in_progress" | "done";
+type FilterType = "all" | "my_tasks" | "todo" | "in_progress" | "done" | "blocked_by_deps";
 
 // Loading skeleton for Suspense fallback
 function TasksListSkeleton() {
@@ -78,13 +80,14 @@ function TasksContent() {
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [myTaskIds, setMyTaskIds] = useState<Set<string>>(new Set());
+  const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
 
   // Get filter from URL if present
   useEffect(() => {
     const urlFilter = searchParams.get("filter") as FilterType | null;
-    if (urlFilter && ["all", "my_tasks", "todo", "in_progress", "done"].includes(urlFilter)) {
+    if (urlFilter && ["all", "my_tasks", "todo", "in_progress", "done", "blocked_by_deps"].includes(urlFilter)) {
       setFilter(urlFilter);
     }
   }, [searchParams]);
@@ -104,7 +107,7 @@ function TasksContent() {
       if (error) {
         console.error("Error fetching tasks:", error);
       } else {
-        // Normalize programme join — Supabase returns array for FK select joins
+        // Normalize programme join
         const normalized: Task[] = (data || []).map((t) => {
           const prog = t.programme;
           return {
@@ -122,21 +125,58 @@ function TasksContent() {
         setTasks(normalized);
       }
 
-      // FIX: Fetch user's task assignments via task_assignees (many-to-many)
+      // Fetch user's task assignments
       const { data: myAssignments } = await supabase
         .from("task_assignees")
         .select("task_id")
         .eq("user_id", user.id);
 
       setMyTaskIds(new Set((myAssignments || []).map((a) => a.task_id)));
+
+      // Fetch all dependencies to determine blocked tasks
+      const { data: allDependencies } = await supabase
+        .from("task_dependencies")
+        .select("task_id, depends_on_id");
+
+      if (allDependencies && allDependencies.length > 0) {
+        // Get unique depends_on_ids to check their status
+        const dependsOnIds = [...new Set(allDependencies.map((d) => d.depends_on_id))];
+        
+        const { data: dependentTasks } = await supabase
+          .from("tasks")
+          .select("id, status")
+          .in("id", dependsOnIds);
+
+        // Create a map of task status
+        const taskStatusMap = new Map<string, string>();
+        dependentTasks?.forEach((t) => taskStatusMap.set(t.id, t.status));
+
+        // Determine which tasks are blocked (have at least one incomplete dependency)
+        const blocked = new Set<string>();
+        allDependencies.forEach((dep) => {
+          const depStatus = taskStatusMap.get(dep.depends_on_id);
+          if (depStatus && depStatus !== "done") {
+            blocked.add(dep.task_id);
+          }
+        });
+
+        setBlockedTaskIds(blocked);
+      }
+
       setIsLoading(false);
     };
 
     fetchTasks();
   }, [user?.id]);
 
-  // FIX: Filter "My Tasks" using task_assignees Set, not assignee_id
-  const filteredTasks = tasks.filter((task) => {
+  // Add blocked status to tasks
+  const tasksWithBlocked = tasks.map((t) => ({
+    ...t,
+    isBlockedByDependencies: blockedTaskIds.has(t.id),
+  }));
+
+  // Filter tasks
+  const filteredTasks = tasksWithBlocked.filter((task) => {
     switch (filter) {
       case "my_tasks":
         return myTaskIds.has(task.id);
@@ -146,18 +186,21 @@ function TasksContent() {
         return task.status === "in_progress";
       case "done":
         return task.status === "done";
+      case "blocked_by_deps":
+        return task.isBlockedByDependencies;
       default:
         return true;
     }
   });
 
-  // FIX: Counts also use myTaskIds Set
+  // Task counts
   const taskCounts = {
     all: tasks.length,
     my_tasks: tasks.filter((t) => myTaskIds.has(t.id)).length,
     todo: tasks.filter((t) => t.status === "todo").length,
     in_progress: tasks.filter((t) => t.status === "in_progress").length,
     done: tasks.filter((t) => t.status === "done").length,
+    blocked_by_deps: blockedTaskIds.size,
   };
 
   return (
@@ -204,7 +247,7 @@ function TasksContent() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
-        {(["all", "my_tasks", "todo", "in_progress", "done"] as FilterType[]).map(
+        {(["all", "my_tasks", "todo", "in_progress", "done", "blocked_by_deps"] as FilterType[]).map(
           (f) => (
             <button
               key={f}
@@ -220,6 +263,12 @@ function TasksContent() {
               {f === "todo" && "To Do"}
               {f === "in_progress" && "In Progress"}
               {f === "done" && "Done"}
+              {f === "blocked_by_deps" && (
+                <span className="flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  Blocked
+                </span>
+              )}
               <span className="ml-1.5 opacity-60">({taskCounts[f]})</span>
             </button>
           )
@@ -289,27 +338,43 @@ function TaskRow({ task }: { task: Task }) {
 
   return (
     <Link href={`/tasks/${task.id}`}>
-      <div className="group flex items-center gap-4 rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro">
+      <div className={`group flex items-center gap-4 rounded-xl border-2 bg-card p-4 shadow-retro-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro ${
+        task.isBlockedByDependencies 
+          ? "border-red-200 bg-red-50/50" 
+          : "border-border"
+      }`}>
         {/* Status checkbox visual */}
         <div
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 ${
             task.status === "done"
               ? "border-foreground bg-foreground"
+              : task.isBlockedByDependencies
+              ? "border-red-300 bg-red-100"
               : "border-border bg-background"
           }`}
         >
-          {task.status === "done" && (
+          {task.status === "done" ? (
             <CheckSquare className="h-4 w-4 text-background" strokeWidth={2} />
-          )}
+          ) : task.isBlockedByDependencies ? (
+            <Lock className="h-3 w-3 text-red-500" strokeWidth={2} />
+          ) : null}
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <p
-            className={`font-medium text-card-foreground ${getStatusStyle(task.status)}`}
-          >
-            {task.title}
-          </p>
+          <div className="flex items-center gap-2">
+            <p
+              className={`font-medium text-card-foreground ${getStatusStyle(task.status)}`}
+            >
+              {task.title}
+            </p>
+            {task.isBlockedByDependencies && (
+              <span className="flex items-center gap-1 rounded-full border border-red-200 bg-red-100 px-2 py-0.5 font-mono text-[10px] font-medium text-red-600">
+                <Link2 className="h-2.5 w-2.5" />
+                Blocked
+              </span>
+            )}
+          </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {task.programme && (
               <span className="flex items-center gap-1">
@@ -352,6 +417,7 @@ function EmptyState({ filter }: { filter: FilterType }) {
     todo: "No tasks in To Do.",
     in_progress: "No tasks in progress.",
     done: "No completed tasks.",
+    blocked_by_deps: "No tasks blocked by dependencies.",
   };
 
   return (

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, Plus, X, FileCheck, ShieldAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,7 @@ interface TaskAssignee {
 export default function EditTaskPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const taskId = params.id as string;
 
   const [programmes, setProgrammes] = useState<Programme[]>([]);
@@ -39,6 +39,7 @@ export default function EditTaskPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [taskCreatorId, setTaskCreatorId] = useState<string | null>(null);
 
   // Form state
   const [title, setTitle] = useState("");
@@ -47,7 +48,19 @@ export default function EditTaskPage() {
   const [priority, setPriority] = useState("medium");
   const [dueDate, setDueDate] = useState("");
   const [programmeId, setProgrammeId] = useState("");
+  const [evidenceRequired, setEvidenceRequired] = useState(false);
+  const [hasEvidenceSubmitted, setHasEvidenceSubmitted] = useState(false);
   const [showAddAssignee, setShowAddAssignee] = useState(false);
+
+  // Permission check: creator, manager, admin, super_admin can edit
+  const canEdit =
+    profile?.role === "admin" ||
+    profile?.role === "super_admin" ||
+    profile?.role === "manager" ||
+    taskCreatorId === user?.id;
+
+  // Can toggle evidence: only if not submitted AND user has edit permission
+  const canToggleEvidence = !hasEvidenceSubmitted && canEdit;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,6 +85,9 @@ export default function EditTaskPage() {
       setPriority(taskData.priority);
       setDueDate(taskData.due_date || "");
       setProgrammeId(taskData.programme_id || "");
+      setEvidenceRequired(taskData.evidence_required || false);
+      setHasEvidenceSubmitted(!!taskData.evidence_submitted_at);
+      setTaskCreatorId(taskData.created_by);
 
       // Fetch programmes
       const { data: programmesData } = await supabase
@@ -95,7 +111,6 @@ export default function EditTaskPage() {
         .eq("task_id", taskId);
 
       if (assigneesData && assigneesData.length > 0) {
-        const userIds = assigneesData.map((a) => a.user_id);
         const assigneesWithUsers = assigneesData.map((a) => ({
           id: a.id,
           user_id: a.user_id,
@@ -148,6 +163,12 @@ export default function EditTaskPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (!canEdit) {
+      setError("You don't have permission to edit this task");
+      return;
+    }
+    
     setIsSaving(true);
     setError("");
 
@@ -162,6 +183,7 @@ export default function EditTaskPage() {
         priority,
         due_date: dueDate || null,
         programme_id: programmeId || null,
+        evidence_required: evidenceRequired,
       })
       .eq("id", taskId);
 
@@ -177,7 +199,7 @@ export default function EditTaskPage() {
       action: "task_updated",
       entity_type: "task",
       entity_id: taskId,
-      details: { title },
+      details: { title, evidence_required: evidenceRequired },
     });
 
     router.push(`/tasks/${taskId}`);
@@ -199,6 +221,39 @@ export default function EditTaskPage() {
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
         <div className="h-96 animate-pulse rounded-2xl border-2 border-border bg-card" />
+      </div>
+    );
+  }
+
+  // Permission denied state
+  if (!isLoading && !canEdit && taskCreatorId) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href={`/tasks/${taskId}`}>
+            <Button variant="outline" size="icon" className="border-2 shadow-retro-sm">
+              <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              Edit Task
+            </h1>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-8 text-center">
+          <ShieldAlert className="mx-auto h-12 w-12 text-red-500" />
+          <h2 className="mt-4 text-xl font-bold text-red-700">Permission Denied</h2>
+          <p className="mt-2 text-red-600">
+            Only the task creator, managers, or admins can edit this task.
+          </p>
+          <Link href={`/tasks/${taskId}`} className="mt-6 inline-block">
+            <Button variant="outline" className="border-2 border-red-200 text-red-600 hover:bg-red-100">
+              Back to Task
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }
@@ -307,6 +362,7 @@ export default function EditTaskPage() {
                 >
                   <option value="todo">To Do</option>
                   <option value="in_progress">In Progress</option>
+                  <option value="pending_review">Pending Review</option>
                   <option value="done">Done</option>
                   <option value="blocked">Blocked</option>
                 </select>
@@ -359,6 +415,40 @@ export default function EditTaskPage() {
                 </select>
               </div>
             </div>
+
+            {/* Evidence Required */}
+            <div className={`rounded-xl border-2 p-4 ${
+              evidenceRequired 
+                ? "border-foreground bg-muted" 
+                : "border-border bg-muted/30"
+            }`}>
+              <label className={`flex items-start gap-3 ${canToggleEvidence ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}>
+                <input
+                  type="checkbox"
+                  checked={evidenceRequired}
+                  onChange={(e) => canToggleEvidence && setEvidenceRequired(e.target.checked)}
+                  disabled={!canToggleEvidence}
+                  className="mt-1 h-4 w-4 rounded border-2 border-foreground text-foreground focus:ring-foreground disabled:opacity-50"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <FileCheck className={`h-4 w-4 ${evidenceRequired ? "text-foreground" : "text-muted-foreground"}`} />
+                    <span className={`font-medium ${evidenceRequired ? "text-foreground" : "text-foreground"}`}>
+                      Require Evidence
+                    </span>
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                    Assignee must submit evidence (link to doc/photo) and get
+                    manager approval before this task can be marked complete.
+                  </p>
+                  {hasEvidenceSubmitted && (
+                    <p className="mt-2 font-mono text-xs text-amber-600">
+                      Cannot change — evidence has already been submitted.
+                    </p>
+                  )}
+                </div>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -408,7 +498,9 @@ export default function EditTaskPage() {
                     </div>
                     <div>
                       <p className="font-medium">{u.full_name || u.username}</p>
-                      <p className="font-mono text-xs text-muted-foreground">{u.email}</p>
+                      {u.email && (
+                        <p className="font-mono text-xs text-muted-foreground">{u.email}</p>
+                      )}
                     </div>
                   </button>
                 ))

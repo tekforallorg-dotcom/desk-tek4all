@@ -2,7 +2,18 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, Bell, Menu, MessageSquare, CheckSquare, FolderKanban, Shield, Mail } from "lucide-react";
+import { 
+  Search, 
+  Bell, 
+  Menu, 
+  CheckSquare, 
+  FolderKanban, 
+  Calendar,
+  FileCheck,
+  Check,
+  X,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,24 +32,29 @@ interface TopbarProps {
   onMenuClick: () => void;
 }
 
-interface NotificationItem {
+interface Notification {
   id: string;
-  type: "message" | "task" | "programme" | "admin" | "email";
-  label: string;
-  user_name: string;
-  created_at: string;
+  type: string;
+  title: string;
+  body: string | null;
   href: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  actor_id: string | null;
+  is_read: boolean;
+  created_at: string;
+  actor?: { full_name: string | null; username: string } | null;
 }
 
-const NOTIF_SEEN_KEY = "moondesk_notif_seen_at";
-
 export function Topbar({ onMenuClick }: TopbarProps) {
-  const { user, profile, isLoading } = useAuth();
+  const { user, profile } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [notifCount, setNotifCount] = useState(0);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [displayCount, setDisplayCount] = useState(0); // For smooth animation
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isMarkingRead, setIsMarkingRead] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -54,287 +70,93 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // ── Get last-seen timestamp from localStorage ────────────────────────
-  const getLastSeen = useCallback((): string => {
-    if (typeof window === "undefined") return new Date(0).toISOString();
-    const stored = localStorage.getItem(NOTIF_SEEN_KEY);
-    if (stored) return stored;
-    // Default: 24h ago
-    return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  }, []);
+  // Smooth count animation
+  useEffect(() => {
+    if (displayCount === unreadCount) return;
+    
+    const diff = unreadCount - displayCount;
+    const step = diff > 0 ? 1 : -1;
+    const delay = Math.max(50, 200 / Math.abs(diff)); // Faster for bigger changes
+    
+    const timer = setTimeout(() => {
+      setDisplayCount((prev) => prev + step);
+    }, delay);
+    
+    return () => clearTimeout(timer);
+  }, [displayCount, unreadCount]);
 
-  const markAsSeen = useCallback(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(NOTIF_SEEN_KEY, new Date().toISOString());
-  }, []);
-
-  // ── Fetch notifications ──────────────────────────────────────────────
+  // Fetch notifications
   const fetchNotifications = useCallback(async () => {
-    if (!user?.id || !profile) return;
+    if (!user?.id) return;
 
-    const supabase = createClient();
-    const isAdmin = profile.role === "admin" || profile.role === "super_admin";
-    const isManager = profile.role === "manager";
-    const lastSeen = getLastSeen();
-    const items: NotificationItem[] = [];
+    try {
+      const response = await fetch("/api/notifications?limit=20");
+      if (!response.ok) return;
 
-    // ── A. Unread messages ────────────────────────────────────────────
-    // Find conversations user is in, then messages newer than last_read_at
-    const { data: myConvos } = await supabase
-      .from("conversation_participants")
-      .select("conversation_id, last_read_at")
-      .eq("user_id", user.id);
-
-    if (myConvos && myConvos.length > 0) {
-      const convoIds = myConvos.map((c) => c.conversation_id);
-
-      // Build a map of conversation_id -> last_read_at
-      const lastReadMap = new Map<string, string>();
-      for (const c of myConvos) {
-        lastReadMap.set(c.conversation_id, c.last_read_at || new Date(0).toISOString());
-      }
-
-      // Fetch recent messages in those conversations, not sent by me
-      const { data: recentMessages } = await supabase
-        .from("messages")
-        .select("id, conversation_id, sender_id, content, created_at")
-        .in("conversation_id", convoIds)
-        .neq("sender_id", user.id)
-        .gte("created_at", lastSeen)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      // Filter to only unread (created_at > last_read_at for that conversation)
-      const unreadMessages = (recentMessages || []).filter((m) => {
-        const lastRead = lastReadMap.get(m.conversation_id);
-        return !lastRead || new Date(m.created_at) > new Date(lastRead);
-      });
-
-      // Resolve sender names
-      const senderIds = [...new Set(unreadMessages.map((m) => m.sender_id))];
-      const senderNameMap = new Map<string, string>();
-
-      if (senderIds.length > 0) {
-        const { data: senderProfiles } = await supabase
-          .from("profiles")
-          .select("id, full_name, username")
-          .in("id", senderIds);
-
-        for (const p of senderProfiles || []) {
-          senderNameMap.set(p.id, p.full_name || p.username || "Someone");
-        }
-      }
-
-      // Deduplicate: one notification per conversation (latest message)
-      const seenConvos = new Set<string>();
-      for (const m of unreadMessages) {
-        if (seenConvos.has(m.conversation_id)) continue;
-        seenConvos.add(m.conversation_id);
-
-        const senderName = senderNameMap.get(m.sender_id) || "Someone";
-        const preview = m.content
-          ? m.content.length > 40
-            ? m.content.slice(0, 40) + "..."
-            : m.content
-          : "sent a message";
-
-        items.push({
-          id: `msg-${m.id}`,
-          type: "message",
-          label: preview,
-          user_name: senderName,
-          created_at: m.created_at,
-          href: "/messaging",
-        });
-      }
+      const data = await response.json();
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unread_count || 0);
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
     }
+  }, [user?.id]);
 
-    // ── B. Audit log events (excluding login noise) ───────────────────
-    // Only task/programme/admin actions, not login/email_classified
-    const excludedActions = [
-      "email_classified",
-      "login",
-      "user_login",
-      "logout",
-    ];
-
-    // Build scope for audit events
-    let scopedUserIds: string[] | null = null;
-
-    if (!isAdmin) {
-      scopedUserIds = [user.id];
-      if (isManager) {
-        const { data: hierarchyData } = await supabase
-          .from("hierarchy")
-          .select("report_id")
-          .eq("manager_id", user.id);
-
-        for (const h of hierarchyData || []) {
-          scopedUserIds.push(h.report_id);
-        }
-      }
-    }
-
-    let auditQuery = supabase
-      .from("audit_logs")
-      .select("id, action, details, created_at, user_id, entity_type, entity_id")
-      .neq("user_id", user.id)
-      .gte("created_at", lastSeen)
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    // Exclude noisy actions
-    for (const action of excludedActions) {
-      auditQuery = auditQuery.not("action", "eq", action);
-    }
-
-    if (scopedUserIds !== null) {
-      auditQuery = auditQuery.in("user_id", scopedUserIds);
-    }
-
-    const { data: auditLogs } = await auditQuery;
-    const logList = auditLogs || [];
-
-    // Resolve names for audit events
-    const auditUserIds = [...new Set(logList.map((l) => l.user_id))];
-    const auditNameMap = new Map<string, string>();
-
-    if (auditUserIds.length > 0) {
-      const { data: auditProfiles } = await supabase
-        .from("profiles")
-        .select("id, full_name, username")
-        .in("id", auditUserIds);
-
-      for (const p of auditProfiles || []) {
-        auditNameMap.set(p.id, p.full_name || p.username || "Someone");
-      }
-    }
-
-    for (const log of logList) {
-      const userName = auditNameMap.get(log.user_id) || "Someone";
-      const entityName = log.details?.title || log.details?.name || "";
-
-      let label = "";
-      let href = "/activity";
-      let type: NotificationItem["type"] = "task";
-
-      switch (log.action) {
-        case "task_created":
-          label = `created task "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_updated":
-          label = `updated task "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_status_changed":
-          label = `changed status of "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_assigned":
-          label = `assigned you to "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_unassigned":
-          label = `unassigned from "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_commented":
-          label = `commented on "${entityName}"`;
-          href = `/tasks/${log.entity_id}`;
-          type = "task";
-          break;
-        case "task_deleted":
-          label = `deleted task "${entityName}"`;
-          href = "/tasks";
-          type = "task";
-          break;
-        case "programme_created":
-          label = `created programme "${entityName}"`;
-          href = `/programmes/${log.entity_id}`;
-          type = "programme";
-          break;
-        case "programme_updated":
-          label = `updated programme "${entityName}"`;
-          href = `/programmes/${log.entity_id}`;
-          type = "programme";
-          break;
-        case "password_reset":
-          label = `reset password for ${entityName || "a user"}`;
-          href = "/activity";
-          type = "admin";
-          break;
-        case "user_created":
-          label = `created user "${entityName}"`;
-          href = "/activity";
-          type = "admin";
-          break;
-        case "email_replied":
-          label = "replied to an email";
-          href = "/shared-mail";
-          type = "email";
-          break;
-        case "email_sent":
-          label = "sent an email";
-          href = "/shared-mail";
-          type = "email";
-          break;
-        default:
-          label = log.action.replace(/_/g, " ");
-          break;
-      }
-
-      items.push({
-        id: `audit-${log.id}`,
-        type,
-        label,
-        user_name: userName,
-        created_at: log.created_at,
-        href,
-      });
-    }
-
-    // Sort all items by time (newest first)
-    items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    setNotifications(items);
-    setNotifCount(items.length);
-  }, [user?.id, profile, getLastSeen]);
-
+  // Initial fetch and polling
   useEffect(() => {
     if (user?.id && profile) {
       fetchNotifications();
-      const interval = setInterval(fetchNotifications, 60000);
+      const interval = setInterval(fetchNotifications, 30000); // Poll every 30s
       return () => clearInterval(interval);
     }
   }, [user?.id, profile, fetchNotifications]);
 
-  // ── Mark as seen when dropdown opens ─────────────────────────────────
-  const handleDropdownChange = (open: boolean) => {
-    setDropdownOpen(open);
-    if (open) {
-      // Mark as seen after a short delay (so user sees the items first)
-      setTimeout(() => {
-        markAsSeen();
-        setNotifCount(0);
-      }, 2000);
+  // Mark all as read
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0 || isMarkingRead) return;
+    
+    setIsMarkingRead(true);
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark_all_read: true }),
+      });
+
+      if (response.ok) {
+        setUnreadCount(0);
+        setNotifications((prev) =>
+          prev.map((n) => ({ ...n, is_read: true }))
+        );
+      }
+    } catch (err) {
+      console.error("Error marking as read:", err);
+    } finally {
+      setIsMarkingRead(false);
     }
   };
 
-  // ── Notification click: mark seen immediately ────────────────────────
-  const handleNotifClick = () => {
-    markAsSeen();
-    setNotifCount(0);
+  // Mark single notification as read
+  const handleNotificationClick = async (notifId: string) => {
     setDropdownOpen(false);
+    
+    // Optimistically update
+    const notif = notifications.find((n) => n.id === notifId);
+    if (notif && !notif.is_read) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notifId ? { ...n, is_read: true } : n))
+      );
+
+      // Fire and forget
+      fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_ids: [notifId] }),
+      }).catch(console.error);
+    }
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────
-
+  // Helpers
   const getInitials = () => {
     if (profile?.full_name) {
       return profile.full_name
@@ -368,14 +190,39 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       .join(" ");
   };
 
-  const getNotifIcon = (type: NotificationItem["type"]) => {
+  const getNotifIcon = (type: string) => {
     switch (type) {
-      case "message": return MessageSquare;
-      case "task": return CheckSquare;
-      case "programme": return FolderKanban;
-      case "admin": return Shield;
-      case "email": return Mail;
-      default: return Bell;
+      case "task_assigned":
+      case "task_status_changed":
+      case "task_comment":
+      case "task_due_soon":
+        return CheckSquare;
+      case "evidence_submitted":
+      case "evidence_approved":
+      case "evidence_rejected":
+        return FileCheck;
+      case "event_invited":
+      case "event_reminder":
+      case "event_rsvp":
+        return Calendar;
+      case "programme_added":
+        return FolderKanban;
+      default:
+        return Bell;
+    }
+  };
+
+  const getNotifColor = (type: string) => {
+    switch (type) {
+      case "evidence_approved":
+        return "text-green-600 bg-green-50 border-green-200";
+      case "evidence_rejected":
+        return "text-red-600 bg-red-50 border-red-200";
+      case "task_due_soon":
+      case "event_reminder":
+        return "text-amber-600 bg-amber-50 border-amber-200";
+      default:
+        return "text-muted-foreground bg-muted border-border";
     }
   };
 
@@ -385,10 +232,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     const diffMs = now.getTime() - then.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
 
     if (diffMins < 1) return "just now";
     if (diffMins < 60) return `${diffMins}m ago`;
-    return `${diffHours}h ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return then.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   };
 
   const handleSignOut = async () => {
@@ -438,7 +288,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         <div className="flex items-center gap-2 md:gap-3">
           {/* Notifications */}
           {mounted ? (
-            <DropdownMenu open={dropdownOpen} onOpenChange={handleDropdownChange}>
+            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
@@ -446,73 +296,119 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                   className="relative border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
                 >
                   <Bell className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
-                  {notifCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                      {notifCount > 9 ? "9+" : notifCount}
+                  {/* Animated badge */}
+                  <span
+                    className={`absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white transition-all duration-300 ${
+                      displayCount > 0
+                        ? "scale-100 opacity-100"
+                        : "scale-0 opacity-0"
+                    }`}
+                  >
+                    <span
+                      key={displayCount}
+                      className="animate-in fade-in zoom-in duration-150"
+                    >
+                      {displayCount > 99 ? "99+" : displayCount}
                     </span>
-                  )}
+                  </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80 border-2 shadow-retro">
-                <DropdownMenuLabel className="flex items-center justify-between">
-                  <span>Notifications</span>
-                  {notifCount > 0 && (
-                    <span className="font-mono text-[10px] font-normal text-muted-foreground">
-                      {notifCount} new
-                    </span>
+              <DropdownMenuContent align="end" className="w-96 border-2 shadow-retro">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      disabled={isMarkingRead}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      {isMarkingRead ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                      Mark all read
+                    </button>
                   )}
-                </DropdownMenuLabel>
+                </div>
                 <DropdownMenuSeparator />
 
                 {notifications.length === 0 ? (
-                  <div className="px-2 py-6 text-center">
-                    <Bell className="mx-auto h-6 w-6 text-muted-foreground/40" strokeWidth={1.5} />
-                    <p className="mt-2 font-mono text-xs text-muted-foreground">
-                      All caught up
+                  <div className="px-2 py-8 text-center">
+                    <Bell className="mx-auto h-8 w-8 text-muted-foreground/30" strokeWidth={1.5} />
+                    <p className="mt-2 font-medium text-muted-foreground">
+                      All caught up!
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground/70">
+                      No new notifications
                     </p>
                   </div>
                 ) : (
-                  <>
-                    {notifications.slice(0, 6).map((item) => {
-                      const Icon = getNotifIcon(item.type);
+                  <div className="max-h-400px overflow-y-auto">
+                    {notifications.map((notif) => {
+                      const Icon = getNotifIcon(notif.type);
+                      const colorClass = getNotifColor(notif.type);
+                      const actorName = notif.actor?.full_name || notif.actor?.username || null;
+
                       return (
-                        <DropdownMenuItem key={item.id} asChild>
+                        <DropdownMenuItem key={notif.id} asChild>
                           <Link
-                            href={item.href}
-                            onClick={handleNotifClick}
-                            className="flex cursor-pointer items-start gap-2.5 px-3 py-2.5"
+                            href={notif.href}
+                            onClick={() => handleNotificationClick(notif.id)}
+                            className={`flex cursor-pointer items-start gap-3 px-3 py-3 ${
+                              !notif.is_read ? "bg-muted/50" : ""
+                            }`}
                           >
-                            <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-                              <Icon className="h-3 w-3 text-muted-foreground" strokeWidth={2} />
+                            {/* Icon */}
+                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${colorClass}`}>
+                              <Icon className="h-4 w-4" strokeWidth={2} />
                             </div>
+
+                            {/* Content */}
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm leading-snug">
-                                <span className="font-medium">{item.user_name}</span>{" "}
-                                <span className="text-muted-foreground">{item.label}</span>
-                              </p>
-                              <span className="font-mono text-[10px] text-muted-foreground">
-                                {formatNotifTime(item.created_at)}
-                              </span>
+                              <div className="flex items-start justify-between gap-2">
+                                <p className={`text-sm leading-snug ${!notif.is_read ? "font-medium" : ""}`}>
+                                  {notif.title}
+                                </p>
+                                {!notif.is_read && (
+                                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                                )}
+                              </div>
+                              {notif.body && (
+                                <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
+                                  {notif.body}
+                                </p>
+                              )}
+                              <div className="mt-1 flex items-center gap-2">
+                                {actorName && (
+                                  <span className="font-mono text-[10px] text-muted-foreground">
+                                    by {actorName}
+                                  </span>
+                                )}
+                                <span className="font-mono text-[10px] text-muted-foreground">
+                                  {actorName ? "•" : ""} {formatNotifTime(notif.created_at)}
+                                </span>
+                              </div>
                             </div>
                           </Link>
                         </DropdownMenuItem>
                       );
                     })}
+                  </div>
+                )}
 
-                    {notifications.length > 6 && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/activity"
-                            onClick={handleNotifClick}
-                            className="cursor-pointer justify-center font-mono text-xs text-muted-foreground"
-                          >
-                            View all activity
-                          </Link>
-                        </DropdownMenuItem>
-                      </>
-                    )}
+                {notifications.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href="/activity"
+                        onClick={() => setDropdownOpen(false)}
+                        className="cursor-pointer justify-center py-2 font-mono text-xs text-muted-foreground"
+                      >
+                        View all activity
+                      </Link>
+                    </DropdownMenuItem>
                   </>
                 )}
               </DropdownMenuContent>

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, FileCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,8 +29,11 @@ function TaskForm() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [evidenceRequired, setEvidenceRequired] = useState(false);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
 
   const defaultProgrammeId = searchParams.get("programme") || "";
+  const defaultStatus = searchParams.get("status") || "todo";
 
   useEffect(() => {
     const fetchData = async () => {
@@ -67,7 +70,6 @@ function TaskForm() {
     const priority = formData.get("priority") as string;
     const dueDate = formData.get("due_date") as string;
     const programmeId = formData.get("programme_id") as string;
-    const assigneeId = formData.get("assignee_id") as string;
 
     const supabase = createClient();
 
@@ -80,8 +82,9 @@ function TaskForm() {
         priority,
         due_date: dueDate || null,
         programme_id: programmeId || null,
-        assignee_id: assigneeId || user?.id,
+        assignee_id: selectedAssignees[0] || user?.id, // Keep first assignee for legacy field
         created_by: user?.id,
+        evidence_required: evidenceRequired,
       })
       .select()
       .single();
@@ -93,13 +96,38 @@ function TaskForm() {
       return;
     }
 
+    // Insert all assignees into task_assignees table
+    if (selectedAssignees.length > 0) {
+      const assigneeInserts = selectedAssignees.map((assigneeId) => ({
+        task_id: data.id,
+        user_id: assigneeId,
+        assigned_by: user?.id,
+      }));
+      
+      await supabase.from("task_assignees").insert(assigneeInserts);
+
+      // Send notifications to assignees (fire and forget)
+      fetch(`/api/tasks/${data.id}/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "assigned_batch",
+          assignee_ids: selectedAssignees,
+        }),
+      }).catch(console.error);
+    }
+
     // Log the action
     await supabase.from("audit_logs").insert({
       user_id: user?.id,
       action: "task_created",
       entity_type: "task",
       entity_id: data.id,
-      details: { title, assignee_id: assigneeId || user?.id },
+      details: { 
+        title, 
+        assignee_count: selectedAssignees.length,
+        evidence_required: evidenceRequired,
+      },
     });
 
     router.push(`/tasks/${data.id}`);
@@ -177,27 +205,45 @@ function TaskForm() {
               />
             </div>
 
-            {/* Assignee */}
+            {/* Assignees - Multi-select */}
             <div className="space-y-2">
-              <label
-                htmlFor="assignee_id"
-                className="font-mono text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
+              <label className="font-mono text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Assign To
               </label>
-              <select
-                id="assignee_id"
-                name="assignee_id"
-                defaultValue={user?.id || ""}
-                className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
-              >
-                <option value="">Unassigned</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name || u.username} ({u.email})
-                  </option>
-                ))}
-              </select>
+              <div className="max-h-48 overflow-y-auto rounded-xl border-2 border-border bg-background p-2 shadow-retro-sm">
+                {users.length === 0 ? (
+                  <p className="px-2 py-3 text-sm text-muted-foreground">No users available</p>
+                ) : (
+                  users.map((u) => (
+                    <label
+                      key={u.id}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAssignees.includes(u.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAssignees([...selectedAssignees, u.id]);
+                          } else {
+                            setSelectedAssignees(selectedAssignees.filter((id) => id !== u.id));
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-2 border-border text-foreground focus:ring-foreground"
+                      />
+                      <span className="text-sm">
+                        {u.full_name || u.username}
+                        {u.email && <span className="text-muted-foreground"> ({u.email})</span>}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {selectedAssignees.length > 0 && (
+                <p className="font-mono text-xs text-muted-foreground">
+                  {selectedAssignees.length} assignee{selectedAssignees.length > 1 ? "s" : ""} selected
+                </p>
+              )}
             </div>
 
             {/* Status & Priority */}
@@ -212,7 +258,7 @@ function TaskForm() {
                 <select
                   id="status"
                   name="status"
-                  defaultValue="todo"
+                  defaultValue={defaultStatus}
                   className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
                 >
                   <option value="todo">To Do</option>
@@ -279,6 +325,30 @@ function TaskForm() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Evidence Required */}
+            <div className="rounded-xl border-2 border-border bg-muted p-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={evidenceRequired}
+                  onChange={(e) => setEvidenceRequired(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-2 border-foreground text-foreground focus:ring-foreground"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="h-4 w-4 text-foreground" />
+                    <span className="font-medium text-foreground">
+                      Require Evidence
+                    </span>
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">
+                    Assignee must submit evidence (link to doc/photo) and get
+                    manager approval before this task can be marked complete.
+                  </p>
+                </div>
+              </label>
             </div>
           </div>
         </div>

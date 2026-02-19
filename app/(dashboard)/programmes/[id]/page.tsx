@@ -291,6 +291,19 @@ export default function ProgrammeDetailPage() {
       member_name: addedUser?.full_name || addedUser?.username || "",
     });
 
+    // Notify added member (fire and forget)
+    if (userId !== user.id) {
+      fetch("/api/notifications/programme-added", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          programme_id: programmeId,
+          programme_name: programme.name,
+          member_id: userId,
+        }),
+      }).catch(console.error);
+    }
+
     await fetchMembers();
     setShowManageMembers(false);
   };

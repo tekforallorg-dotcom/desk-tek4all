@@ -16,6 +16,8 @@ import {
   Circle,
   CheckCircle2,
   XCircle,
+  Lock,
+  Link2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ interface Task {
   created_at: string;
   programme?: { name: string } | null;
   assignees?: { user: { full_name: string | null; username: string } }[];
+  isBlockedByDependencies?: boolean;
 }
 
 interface Column {
@@ -130,6 +133,7 @@ function TaskBoardContent() {
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [myTaskIds, setMyTaskIds] = useState<Set<string>>(new Set());
+  const [blockedTaskIds, setBlockedTaskIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
@@ -184,14 +188,48 @@ function TaskBoardContent() {
         .eq("user_id", user.id);
 
       setMyTaskIds(new Set((myAssignments || []).map((a) => a.task_id)));
+
+      // Fetch all dependencies to determine blocked tasks
+      const { data: allDependencies } = await supabase
+        .from("task_dependencies")
+        .select("task_id, depends_on_id");
+
+      if (allDependencies && allDependencies.length > 0) {
+        const dependsOnIds = [...new Set(allDependencies.map((d) => d.depends_on_id))];
+        
+        const { data: dependentTasks } = await supabase
+          .from("tasks")
+          .select("id, status")
+          .in("id", dependsOnIds);
+
+        const taskStatusMap = new Map<string, string>();
+        dependentTasks?.forEach((t) => taskStatusMap.set(t.id, t.status));
+
+        const blocked = new Set<string>();
+        allDependencies.forEach((dep) => {
+          const depStatus = taskStatusMap.get(dep.depends_on_id);
+          if (depStatus && depStatus !== "done") {
+            blocked.add(dep.task_id);
+          }
+        });
+
+        setBlockedTaskIds(blocked);
+      }
+
       setIsLoading(false);
     };
 
     fetchTasks();
   }, [user?.id]);
 
+  // Add blocked status to tasks
+  const tasksWithBlocked = tasks.map((t) => ({
+    ...t,
+    isBlockedByDependencies: blockedTaskIds.has(t.id),
+  }));
+
   // Filter tasks
-  const filteredTasks = tasks.filter((task) => {
+  const filteredTasks = tasksWithBlocked.filter((task) => {
     if (filter === "my_tasks") {
       return myTaskIds.has(task.id);
     }
@@ -209,11 +247,16 @@ function TaskBoardContent() {
 
   // Drag handlers
   const handleDragStart = (e: React.DragEvent, task: Task) => {
+    // Prevent dragging blocked tasks (they can't change status)
+    if (task.isBlockedByDependencies && task.status !== "blocked") {
+      e.preventDefault();
+      return;
+    }
+    
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", task.id);
     
-    // Add drag styling after a short delay
     setTimeout(() => {
       const element = document.getElementById(`task-${task.id}`);
       if (element) {
@@ -248,6 +291,12 @@ function TaskBoardContent() {
     setDragOverColumn(null);
 
     if (!draggedTask || draggedTask.status === newStatus) {
+      setDraggedTask(null);
+      return;
+    }
+
+    // Prevent moving blocked tasks (except to "blocked" status)
+    if (draggedTask.isBlockedByDependencies && newStatus !== "blocked") {
       setDraggedTask(null);
       return;
     }
@@ -289,7 +338,6 @@ function TaskBoardContent() {
           },
         });
 
-        // Also log to task_updates
         await supabase.from("task_updates").insert({
           task_id: taskId,
           user_id: user.id,
@@ -319,7 +367,6 @@ function TaskBoardContent() {
     const xDiff = touchStart.x - e.touches[0].clientX;
     const yDiff = touchStart.y - e.touches[0].clientY;
     
-    // If horizontal swipe is greater than vertical, allow scroll
     if (Math.abs(xDiff) > Math.abs(yDiff)) {
       // Let the container scroll naturally
     }
@@ -388,6 +435,12 @@ function TaskBoardContent() {
             <span className="ml-1.5 opacity-60">({taskCounts[f]})</span>
           </button>
         ))}
+        {blockedTaskIds.size > 0 && (
+          <span className="flex items-center gap-1 rounded-lg border-2 border-red-200 bg-red-50 px-3 py-1.5 font-mono text-xs font-medium text-red-600">
+            <Lock className="h-3 w-3" />
+            {blockedTaskIds.size} blocked
+          </span>
+        )}
       </div>
 
       {/* Board */}
@@ -471,7 +524,7 @@ function TaskBoardContent() {
                   )}
                 </div>
 
-                {/* Quick Add (optional future feature) */}
+                {/* Quick Add */}
                 <div className="border-t-2 border-border p-2">
                   <Link
                     href={`/tasks/new?status=${column.id}`}
@@ -524,20 +577,42 @@ function TaskCard({
     });
   };
 
+  // Can't drag blocked tasks (except to manually set to "blocked" status)
+  const canDrag = !task.isBlockedByDependencies || task.status === "blocked";
+
   return (
     <div
       id={`task-${task.id}`}
-      draggable
+      draggable={canDrag}
       onDragStart={(e) => onDragStart(e, task)}
       onDragEnd={onDragEnd}
-      className={`group relative cursor-grab rounded-xl border-2 border-border bg-background p-3 shadow-sm transition-all duration-200 active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-retro-sm ${
+      className={`group relative rounded-xl border-2 bg-background p-3 shadow-sm transition-all duration-200 ${
+        canDrag 
+          ? "cursor-grab active:cursor-grabbing hover:-translate-y-0.5 hover:shadow-retro-sm" 
+          : "cursor-not-allowed"
+      } ${
         isUpdating ? "opacity-50 pointer-events-none" : ""
-      } ${task.status === "done" ? "opacity-60" : ""}`}
+      } ${
+        task.status === "done" ? "opacity-60" : ""
+      } ${
+        task.isBlockedByDependencies 
+          ? "border-red-200 bg-red-50/50" 
+          : "border-border"
+      }`}
     >
       {/* Drag handle indicator */}
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-50 transition-opacity">
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
-      </div>
+      {canDrag && (
+        <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-50 transition-opacity">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Blocked indicator */}
+      {task.isBlockedByDependencies && (
+        <div className="absolute right-2 top-2">
+          <Lock className="h-4 w-4 text-red-500" />
+        </div>
+      )}
 
       {/* Priority indicator */}
       <div className="flex items-center gap-2 mb-2">
@@ -552,6 +627,12 @@ function TaskCard({
           <span className="flex items-center gap-1 text-[10px] font-medium text-red-500">
             <AlertCircle className="h-3 w-3" />
             Overdue
+          </span>
+        )}
+        {task.isBlockedByDependencies && (
+          <span className="flex items-center gap-1 text-[10px] font-medium text-red-500">
+            <Link2 className="h-3 w-3" />
+            Blocked
           </span>
         )}
       </div>

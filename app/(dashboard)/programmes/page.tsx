@@ -8,23 +8,56 @@ import { Button } from "@/components/ui/button";
 import type { Programme } from "@/lib/types/programme";
 import { PROGRAMME_STATUS_LABELS } from "@/lib/types/programme";
 
+interface ProgrammeWithCount extends Programme {
+  member_count: number;
+}
+
 export default function ProgrammesPage() {
-  const [programmes, setProgrammes] = useState<Programme[]>([]);
+  const [programmes, setProgrammes] = useState<ProgrammeWithCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchProgrammes = async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
+      
+      // Fetch programmes
+      const { data: programmesData, error } = await supabase
         .from("programmes")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching programmes:", error);
-      } else {
-        setProgrammes(data || []);
+        setIsLoading(false);
+        return;
       }
+
+      // Fetch member counts for all programmes
+      const programmeIds = (programmesData || []).map((p) => p.id);
+      
+      if (programmeIds.length > 0) {
+        const { data: memberCounts } = await supabase
+          .from("programme_members")
+          .select("programme_id")
+          .in("programme_id", programmeIds);
+
+        // Count members per programme
+        const countMap: Record<string, number> = {};
+        (memberCounts || []).forEach((m) => {
+          countMap[m.programme_id] = (countMap[m.programme_id] || 0) + 1;
+        });
+
+        // Merge counts with programmes
+        const programmesWithCounts = (programmesData || []).map((p) => ({
+          ...p,
+          member_count: countMap[p.id] || 0,
+        }));
+
+        setProgrammes(programmesWithCounts);
+      } else {
+        setProgrammes([]);
+      }
+
       setIsLoading(false);
     };
 
@@ -74,7 +107,7 @@ export default function ProgrammesPage() {
   );
 }
 
-function ProgrammeCard({ programme }: { programme: Programme }) {
+function ProgrammeCard({ programme }: { programme: ProgrammeWithCount }) {
   const statusLabel = PROGRAMME_STATUS_LABELS[programme.status];
 
   const formatDate = (date: string | null) => {
@@ -123,7 +156,8 @@ function ProgrammeCard({ programme }: { programme: Programme }) {
             {formatDate(programme.start_date)}
           </span>
           <span className="flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" strokeWidth={1.5} />0 members
+            <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {programme.member_count} member{programme.member_count !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
@@ -133,7 +167,7 @@ function ProgrammeCard({ programme }: { programme: Programme }) {
 
 function EmptyState() {
   return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-card p-12 text-center">
+    <div className="flex min-h-400px flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-card p-12 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-border bg-background shadow-retro-sm">
         <FolderKanban className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
       </div>

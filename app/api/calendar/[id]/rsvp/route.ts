@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notifyEventRSVP } from "@/lib/notifications";
 
 // PATCH /api/calendar/[id]/rsvp — accept/decline/tentative
 export async function PATCH(
@@ -25,6 +26,13 @@ export async function PATCH(
       );
     }
 
+    // Get event details for notification
+    const { data: event } = await supabase
+      .from("calendar_events")
+      .select("id, title, created_by")
+      .eq("id", id)
+      .single();
+
     const { error } = await supabase
       .from("event_participants")
       .update({
@@ -47,6 +55,22 @@ export async function PATCH(
       entity_id: id,
       metadata: { status },
     });
+
+    // Notify event creator (if not self)
+    if (event && event.created_by && event.created_by !== user.id) {
+      // Map status to notification format
+      const rsvpStatus = status === "accepted" ? "yes" 
+        : status === "declined" ? "no" 
+        : "maybe";
+      
+      await notifyEventRSVP(
+        id,
+        event.title,
+        event.created_by,
+        user.id,
+        rsvpStatus
+      );
+    }
 
     return NextResponse.json({ success: true, status });
   } catch (err) {

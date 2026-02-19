@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notifyEventInvited } from "@/lib/notifications";
 
 // ─── Recurrence expansion helper ─────────────────────────────────────
 function expandRecurringEvents(
@@ -332,6 +333,9 @@ export async function POST(request: NextRequest) {
       },
     ];
 
+    // Track invited user IDs for notifications
+    const invitedUserIds: string[] = [];
+
     if (participant_ids && Array.isArray(participant_ids)) {
       for (const pid of participant_ids) {
         if (pid !== user.id) {
@@ -341,6 +345,7 @@ export async function POST(request: NextRequest) {
             status: "pending",
             responded_at: null as any,
           });
+          invitedUserIds.push(pid);
         }
       }
     }
@@ -351,6 +356,16 @@ export async function POST(request: NextRequest) {
 
     if (partError) {
       console.error("[Calendar] Participants error:", partError);
+    }
+
+    // Notify invited participants
+    for (const inviteeId of invitedUserIds) {
+      await notifyEventInvited(
+        eventId,
+        title,
+        inviteeId,
+        user.id
+      );
     }
 
     // Audit log
