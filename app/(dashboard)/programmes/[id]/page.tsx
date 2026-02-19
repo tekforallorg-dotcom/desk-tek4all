@@ -274,8 +274,7 @@ export default function ProgrammeDetailPage() {
       .insert({
         programme_id: programmeId,
         user_id: userId,
-        role: "member",
-      });
+      })
 
     if (error) {
       console.error("Error adding member:", error.message);
@@ -307,6 +306,7 @@ export default function ProgrammeDetailPage() {
     await fetchMembers();
     setShowManageMembers(false);
   };
+
 
   const handleRemoveMember = async (memberId: string, memberUser: ProgrammeMember["user"]) => {
     if (!user?.id || !programme) return;
