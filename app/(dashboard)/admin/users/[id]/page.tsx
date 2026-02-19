@@ -1,3 +1,5 @@
+// DESTINATION: app/(dashboard)/admin/users/[id]/page.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -13,6 +15,7 @@ import {
   ShieldCheck,
   Mail,
   Calendar,
+  Trash2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -39,7 +42,7 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
 export default function UserDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { profile: currentProfile, user: currentUser } = useAuth();
+  const { profile: currentProfile, user: currentUser, isLoading: authLoading } = useAuth();
   const userId = params.id as string;
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -56,8 +59,13 @@ export default function UserDetailPage() {
   const [resetError, setResetError] = useState("");
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
+  // Delete user states
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const isAdmin =
     currentProfile?.role === "admin" || currentProfile?.role === "super_admin";
+  const isSuperAdmin = currentProfile?.role === "super_admin";
   const isOwnProfile = currentUser?.id === userId;
 
   useEffect(() => {
@@ -82,7 +90,7 @@ export default function UserDetailPage() {
   }, [userId]);
 
   const handleResetPassword = async () => {
-  setShowConfirmReset(false);
+    setShowConfirmReset(false);
 
     setIsResetting(true);
     setNewPassword("");
@@ -105,7 +113,9 @@ export default function UserDetailPage() {
       setNewPassword(data.password);
       setShowPassword(true);
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Failed to reset password");
+      setResetError(
+        err instanceof Error ? err.message : "Failed to reset password"
+      );
     } finally {
       setIsResetting(false);
     }
@@ -159,6 +169,31 @@ export default function UserDetailPage() {
     setIsSaving(false);
   };
 
+  const handleDeleteUser = async () => {
+    setShowConfirmDelete(false);
+    setIsDeleting(true);
+
+    try {
+      const response = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete user");
+      }
+
+      router.push("/admin");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("en-GB", {
       day: "numeric",
@@ -179,6 +214,15 @@ export default function UserDetailPage() {
     return userProfile?.username.slice(0, 2).toUpperCase() || "??";
   };
 
+  if (authLoading || (currentUser && !currentProfile)) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
+        <div className="h-96 animate-pulse rounded-2xl border-2 border-border bg-card" />
+      </div>
+    );
+  }
+
   if (!isAdmin && !isOwnProfile) {
     return (
       <div className="flex min-h-96 items-center justify-center">
@@ -186,7 +230,6 @@ export default function UserDetailPage() {
       </div>
     );
   }
-
   if (isLoading) {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
@@ -237,6 +280,8 @@ export default function UserDetailPage() {
           </div>
         </div>
       </div>
+
+
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -410,13 +455,34 @@ export default function UserDetailPage() {
             )}
 
             <Button
-  type="button"
-  onClick={() => setShowConfirmReset(true)}
-  disabled={isResetting}
+              type="button"
+              onClick={() => setShowConfirmReset(true)}
+              disabled={isResetting}
               variant="outline"
               className="mt-4 border-2 border-red-200 text-red-600 hover:bg-red-50"
             >
               {isResetting ? "Resetting..." : "Reset Password"}
+            </Button>
+          </div>
+        )}
+
+
+        {/* Delete User — super_admin only */}
+        {isSuperAdmin && !isOwnProfile && userProfile.role !== "super_admin" && (
+          <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-6 shadow-retro">
+            <h2 className="text-lg font-bold text-red-700">Danger Zone</h2>
+            <p className="mt-1 font-mono text-xs text-red-600">
+              Permanently delete this user account and all associated data.
+            </p>
+            <Button
+              type="button"
+              onClick={() => setShowConfirmDelete(true)}
+              disabled={isDeleting}
+              variant="outline"
+              className="mt-4 border-2 border-red-300 bg-white text-red-600 hover:bg-red-100"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {isDeleting ? "Deleting..." : "Delete User"}
             </Button>
           </div>
         )}
@@ -451,6 +517,7 @@ export default function UserDetailPage() {
           </Button>
         </div>
       </form>
+
       {/* Confirm Reset Password Dialog */}
       <ConfirmDialog
         isOpen={showConfirmReset}
@@ -463,7 +530,19 @@ export default function UserDetailPage() {
         variant="danger"
         isLoading={isResetting}
       />
+
+      {/* Confirm Delete User Dialog */}
+      <ConfirmDialog
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        onConfirm={handleDeleteUser}
+        title="Delete User?"
+        description={`This will permanently delete ${userProfile.full_name || userProfile.username} and remove all their data. This action cannot be undone.`}
+        confirmText="Delete User"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isDeleting}
+      />
     </div>
   );
 }
- 
