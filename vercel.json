@@ -1,5 +1,4 @@
-# Edit vercel.json
-cat > vercel.json << 'EOF'
+
 {
   "crons": [
     {
@@ -8,4 +7,3 @@ cat > vercel.json << 'EOF'
     }
   ]
 }
-EOF
