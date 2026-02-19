@@ -1,10 +1,3 @@
-/**
- * app/api/drive/files/route.ts
- *
- * GET  /api/drive/files?folderId=X&sort=name|modified|size&order=asc|desc&pageToken=X
- * POST /api/drive/files  (multipart form-data, admin only)
- */
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getDriveClient, ROOT_FOLDER_ID, LIST_FIELDS } from "@/lib/google/drive";
@@ -105,15 +98,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || !["admin", "super_admin"].includes(profile.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // Any authenticated user can upload — no role check needed
 
   try {
     const formData = await request.formData();

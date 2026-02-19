@@ -1,3 +1,5 @@
+// DESTINATION: app/(dashboard)/drive/page.tsx
+
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -185,6 +187,7 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
 export default function DrivePage() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin" || profile?.role === "super_admin";
+  const isSuperAdmin = profile?.role === "super_admin";
 
   // State
   const [files, setFiles] = useState<DriveFile[]>([]);
@@ -332,7 +335,7 @@ export default function DrivePage() {
     }, 400);
   };
 
-  /* ─── Download ─────────────────────────────────────────────────────── */
+  /* ─── Download (everyone) ──────────────────────────────────────────── */
 
   const handleDownload = async (file: DriveFile) => {
     addToast(`Downloading ${file.name}...`);
@@ -382,10 +385,10 @@ export default function DrivePage() {
     }
   };
 
-  /* ─── Upload (admin) ───────────────────────────────────────────────── */
+  /* ─── Upload (everyone) ────────────────────────────────────────────── */
 
   const handleUpload = async (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0 || !isAdmin) return;
+    if (!fileList || fileList.length === 0) return;
 
     setIsUploading(true);
     const total = fileList.length;
@@ -418,10 +421,10 @@ export default function DrivePage() {
     }
   };
 
-  /* ─── Create folder (admin) ────────────────────────────────────────── */
+  /* ─── Create folder (everyone) ─────────────────────────────────────── */
 
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim() || !isAdmin) return;
+    if (!newFolderName.trim()) return;
     setIsCreatingFolder(true);
 
     try {
@@ -446,10 +449,10 @@ export default function DrivePage() {
     }
   };
 
-  /* ─── Delete (admin) ───────────────────────────────────────────────── */
+  /* ─── Delete (super_admin only) ────────────────────────────────────── */
 
   const handleDelete = async (file: DriveFile) => {
-    if (!isAdmin) return;
+    if (!isSuperAdmin) return;
     if (!confirm(`Move "${file.name}" to trash?`)) return;
 
     try {
@@ -463,7 +466,7 @@ export default function DrivePage() {
     }
   };
 
-  /* ─── Rename (admin) ───────────────────────────────────────────────── */
+  /* ─── Rename (admin/super_admin) ───────────────────────────────────── */
 
   const handleRename = async () => {
     if (!renameFile || !renameValue.trim() || !isAdmin) return;
@@ -486,10 +489,9 @@ export default function DrivePage() {
     }
   };
 
-  /* ─── Drag & Drop ─────────────────────────────────────────────────── */
+  /* ─── Drag & Drop (everyone) ───────────────────────────────────────── */
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isAdmin) return;
     e.preventDefault();
     setIsDragOver(true);
   };
@@ -499,7 +501,6 @@ export default function DrivePage() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (!isAdmin) return;
     handleUpload(e.dataTransfer.files);
   };
 
@@ -538,8 +539,8 @@ export default function DrivePage() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Drag overlay */}
-      {isDragOver && isAdmin && (
+      {/* Drag overlay — everyone can upload */}
+      {isDragOver && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-foreground p-12">
             <Upload className="h-12 w-12 text-foreground" strokeWidth={1.5} />
@@ -568,32 +569,29 @@ export default function DrivePage() {
           >
             <RefreshCw className="h-4 w-4" strokeWidth={1.5} />
           </Button>
-          {isAdmin && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setShowNewFolder(true)}
-                className="border-2 shadow-retro-sm"
-              >
-                <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                New Folder
-              </Button>
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5"
-              >
-                <Upload className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                Upload
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => handleUpload(e.target.files)}
-              />
-            </>
-          )}
+          {/* Upload & New Folder — available to everyone */}
+          <Button
+            variant="outline"
+            onClick={() => setShowNewFolder(true)}
+            className="border-2 shadow-retro-sm"
+          >
+            <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            New Folder
+          </Button>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5"
+          >
+            <Upload className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            Upload
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => handleUpload(e.target.files)}
+          />
         </div>
       </div>
 
@@ -639,7 +637,7 @@ export default function DrivePage() {
             </div>
             <div>
               <p className="text-lg font-bold">
-                {isAdmin ? "Admin" : "Viewer"}
+                {isSuperAdmin ? "Super Admin" : isAdmin ? "Admin" : "Member"}
               </p>
               <p className="font-mono text-[10px] text-muted-foreground">Your Role</p>
             </div>
@@ -749,7 +747,7 @@ export default function DrivePage() {
           <p className="mt-4 font-mono text-sm text-muted-foreground">
             {searchResults !== null ? "No files match your search." : "This folder is empty."}
           </p>
-          {isAdmin && searchResults === null && (
+          {searchResults === null && (
             <Button
               onClick={() => fileInputRef.current?.click()}
               className="mt-4 border-2 border-foreground bg-foreground text-background shadow-retro"
@@ -788,6 +786,7 @@ export default function DrivePage() {
               key={file.id}
               file={file}
               isAdmin={isAdmin}
+              isSuperAdmin={isSuperAdmin}
               onNavigate={navigateToFolder}
               onSelect={setSelectedFile}
               onDownload={handleDownload}
@@ -805,6 +804,7 @@ export default function DrivePage() {
               key={file.id}
               file={file}
               isAdmin={isAdmin}
+              isSuperAdmin={isSuperAdmin}
               onNavigate={navigateToFolder}
               onSelect={setSelectedFile}
               onDownload={handleDownload}
@@ -948,24 +948,24 @@ export default function DrivePage() {
                 <ExternalLink className="mr-1 h-3 w-3" /> Open
               </Button>
               {isAdmin && (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setRenameFile(selectedFile); setRenameValue(selectedFile.name); }}
-                    className="border-2 text-xs"
-                  >
-                    <Edit3 className="mr-1 h-3 w-3" /> Rename
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(selectedFile)}
-                    className="col-span-2 border-2 text-xs text-red-500 hover:bg-red-50"
-                  >
-                    <Trash2 className="mr-1 h-3 w-3" /> Move to Trash
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setRenameFile(selectedFile); setRenameValue(selectedFile.name); }}
+                  className="border-2 text-xs"
+                >
+                  <Edit3 className="mr-1 h-3 w-3" /> Rename
+                </Button>
+              )}
+              {isSuperAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDelete(selectedFile)}
+                  className="col-span-2 border-2 text-xs text-red-500 hover:bg-red-50"
+                >
+                  <Trash2 className="mr-1 h-3 w-3" /> Move to Trash
+                </Button>
               )}
             </div>
 
@@ -1066,13 +1066,15 @@ export default function DrivePage() {
               >
                 <Edit3 className="h-4 w-4" /> Rename
               </button>
-              <button
-                onClick={() => { handleDelete(contextMenu.file); setContextMenu(null); }}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4" /> Move to Trash
-              </button>
             </>
+          )}
+          {isSuperAdmin && (
+            <button
+              onClick={() => { handleDelete(contextMenu.file); setContextMenu(null); }}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-500 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" /> Move to Trash
+            </button>
           )}
         </div>
       )}
@@ -1150,6 +1152,7 @@ export default function DrivePage() {
 function FileListRow({
   file,
   isAdmin,
+  isSuperAdmin,
   onNavigate,
   onSelect,
   onDownload,
@@ -1161,6 +1164,7 @@ function FileListRow({
 }: {
   file: DriveFile;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   onNavigate: (id: string) => void;
   onSelect: (f: DriveFile) => void;
   onDownload: (f: DriveFile) => void;
@@ -1238,6 +1242,7 @@ function FileListRow({
         >
           <ExternalLink className="h-4 w-4" />
         </button>
+        {/* 3-dot menu: visible for admin (rename) or super_admin (rename + delete) */}
         {isAdmin && (
           <button
             onClick={(e) => { e.stopPropagation(); onContextMenu(e, file); }}
