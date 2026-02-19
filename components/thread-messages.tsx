@@ -59,11 +59,6 @@ export default function ThreadMessages({
     }
   }, [taskId, programmeId]);
 
-  // Scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   // Send message
   const handleSend = async () => {
     if (!newMessage.trim() || isSending) return;
@@ -86,6 +81,10 @@ export default function ThreadMessages({
         const message = await res.json();
         setMessages([...messages, message]);
         setNewMessage("");
+        // Scroll to new message after sending
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 50);
       } else {
         const err = await res.json();
         setError(err.error || "Failed to send message");

@@ -458,7 +458,7 @@ function NewMessageModal({
     const supabase = createClient();
 
     if (mode === "dm") {
-      // Check if DM already exists
+      // Check if DM already exists with EXACTLY 2 participants
       const { data: existingParticipants } = await supabase
         .from("conversation_participants")
         .select("conversation_id")
@@ -468,6 +468,7 @@ function NewMessageModal({
 
       if (existingParticipants) {
         for (const p of existingParticipants) {
+          // Check if other user is in this conversation
           const { data: otherParticipant } = await supabase
             .from("conversation_participants")
             .select("conversation_id")
@@ -476,6 +477,7 @@ function NewMessageModal({
             .single();
 
           if (otherParticipant) {
+            // Verify it's a DM type
             const { data: conv } = await supabase
               .from("conversations")
               .select("type")
@@ -484,8 +486,16 @@ function NewMessageModal({
               .single();
 
             if (conv) {
-              existingConvId = p.conversation_id;
-              break;
+              // Count participants - must be exactly 2 for a true 1-on-1 DM
+              const { count } = await supabase
+                .from("conversation_participants")
+                .select("*", { count: "exact", head: true })
+                .eq("conversation_id", p.conversation_id);
+
+              if (count === 2) {
+                existingConvId = p.conversation_id;
+                break;
+              }
             }
           }
         }

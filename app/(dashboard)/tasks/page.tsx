@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, CheckSquare, Calendar, Flag, FolderKanban } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Plus, CheckSquare, Calendar, Flag, FolderKanban, List, LayoutGrid } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -37,10 +38,19 @@ type FilterType = "all" | "my_tasks" | "todo" | "in_progress" | "done";
 
 export default function TasksPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [myTaskIds, setMyTaskIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
+
+  // Get filter from URL if present
+  useEffect(() => {
+    const urlFilter = searchParams.get("filter") as FilterType | null;
+    if (urlFilter && ["all", "my_tasks", "todo", "in_progress", "done"].includes(urlFilter)) {
+      setFilter(urlFilter);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -116,7 +126,7 @@ export default function TasksPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Tasks
@@ -125,12 +135,34 @@ export default function TasksPage() {
             Manage and track all your tasks.
           </p>
         </div>
-        <Link href="/tasks/new">
-          <Button className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5">
-            <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
-            New Task
-          </Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex items-center rounded-xl border-2 border-border bg-card p-1 shadow-retro-sm">
+            <button
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all bg-foreground text-background shadow-sm"
+              title="List View"
+            >
+              <List className="h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">List</span>
+            </button>
+            <Link
+              href={`/tasks/board${filter !== "all" ? `?filter=${filter}` : ""}`}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground"
+              title="Board View"
+            >
+              <LayoutGrid className="h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">Board</span>
+            </Link>
+          </div>
+
+          <Link href="/tasks/new">
+            <Button className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5">
+              <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">New Task</span>
+              <span className="sm:hidden">New</span>
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -267,7 +299,7 @@ function TaskRow({ task }: { task: Task }) {
           >
             {PRIORITY_LABELS[task.priority]}
           </span>
-          <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-muted-foreground">
+          <span className="hidden sm:inline-block rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-medium uppercase text-muted-foreground">
             {STATUS_LABELS[task.status]}
           </span>
         </div>

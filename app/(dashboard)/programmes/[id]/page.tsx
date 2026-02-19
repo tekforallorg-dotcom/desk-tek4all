@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ThreadMessages from "@/components/thread-messages";
+import ProgrammeAnalytics from "@/components/programme-analytics";
 import {
   ArrowLeft,
   Edit,
@@ -11,10 +12,10 @@ import {
   Calendar,
   Users,
   Clock,
-  Plus,
   X,
   CheckSquare,
   FolderKanban,
+  RefreshCw,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,52 @@ export default function ProgrammeDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showManageMembers, setShowManageMembers] = useState(false);
+  const [isRefreshingMembers, setIsRefreshingMembers] = useState(false);
+
+  /* ─── Fetch Members (reusable) ─────────────────────────────────────── */
+
+  const fetchMembers = useCallback(async () => {
+    setIsRefreshingMembers(true);
+    const supabase = createClient();
+
+    const { data: memberData, error: memberError } = await supabase
+      .from("programme_members")
+      .select("id, user_id, role")
+      .eq("programme_id", programmeId);
+
+    if (memberError) {
+      console.error("Error fetching members:", memberError.message);
+      setIsRefreshingMembers(false);
+      return;
+    }
+
+    if (memberData && memberData.length > 0) {
+      const userIds = memberData.map((m) => m.user_id);
+      const { data: usersData } = await supabase
+        .from("profiles")
+        .select("id, full_name, username, email")
+        .in("id", userIds);
+
+      const membersWithUsers = memberData.map((m) => ({
+        id: m.id,
+        user_id: m.user_id,
+        role: m.role || "member",
+        user: usersData?.find((u) => u.id === m.user_id) || {
+          id: m.user_id,
+          full_name: null,
+          username: "",
+          email: "",
+        },
+      }));
+      setMembers(membersWithUsers);
+    } else {
+      setMembers([]);
+    }
+
+    setIsRefreshingMembers(false);
+  }, [programmeId]);
+
+  /* ─── Initial Data Fetch ───────────────────────────────────────────── */
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -116,33 +163,9 @@ export default function ProgrammeDetailPage() {
       setProgramme(progData);
 
       // 2. Programme members
-      const { data: memberData } = await supabase
-        .from("programme_members")
-        .select("id, user_id, role")
-        .eq("programme_id", programmeId);
+      await fetchMembers();
 
-      if (memberData && memberData.length > 0) {
-        const userIds = memberData.map((m) => m.user_id);
-        const { data: usersData } = await supabase
-          .from("profiles")
-          .select("id, full_name, username, email")
-          .in("id", userIds);
-
-        const membersWithUsers = memberData.map((m) => ({
-          id: m.id,
-          user_id: m.user_id,
-          role: m.role || "member",
-          user: usersData?.find((u) => u.id === m.user_id) || {
-            id: m.user_id,
-            full_name: null,
-            username: "",
-            email: "",
-          },
-        }));
-        setMembers(membersWithUsers);
-      }
-
-      // 3. All active users (for add modal)
+      // 3. All active users
       const { data: allUsersData } = await supabase
         .from("profiles")
         .select("id, full_name, username, email")
@@ -159,7 +182,7 @@ export default function ProgrammeDetailPage() {
         .limit(10);
       setTasks(taskData || []);
 
-      // 5. Recent activity from audit_logs for this programme
+      // 5. Recent activity
       const { data: auditData } = await supabase
         .from("audit_logs")
         .select("id, action, details, created_at, user_id")
@@ -190,7 +213,18 @@ export default function ProgrammeDetailPage() {
     };
 
     fetchAll();
-  }, [programmeId]);
+  }, [programmeId, fetchMembers]);
+
+  /* ─── Scroll to top after loading ──────────────────────────────────── */
+
+  useEffect(() => {
+    if (!isLoading) {
+      // Use requestAnimationFrame to ensure DOM is painted
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+      });
+    }
+  }, [isLoading]);
 
   /* ─── Handlers ─────────────────────────────────────────────────────── */
 
@@ -222,40 +256,42 @@ export default function ProgrammeDetailPage() {
     if (!user?.id || !programme) return;
     const supabase = createClient();
 
-    const newId = crypto.randomUUID();
+    const { data: existing } = await supabase
+      .from("programme_members")
+      .select("id")
+      .eq("programme_id", programmeId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existing) {
+      await fetchMembers();
+      setShowManageMembers(false);
+      return;
+    }
 
     const { error } = await supabase
       .from("programme_members")
       .insert({
-        id: newId,
         programme_id: programmeId,
         user_id: userId,
         role: "member",
       });
 
     if (error) {
-      console.error("Error adding member:", error.message, error.code, error.details);
+      console.error("Error adding member:", error.message);
+      await fetchMembers();
+      setShowManageMembers(false);
       return;
     }
 
     const addedUser = allUsers.find((u) => u.id === userId);
-    if (addedUser) {
-      setMembers([
-        ...members,
-        {
-          id: newId,
-          user_id: userId,
-          role: "member",
-          user: addedUser,
-        },
-      ]);
-    }
 
     await logAudit(user.id, "programme_member_added", "programme", programmeId, {
       name: programme.name,
       member_name: addedUser?.full_name || addedUser?.username || "",
     });
 
+    await fetchMembers();
     setShowManageMembers(false);
   };
 
@@ -349,7 +385,7 @@ export default function ProgrammeDetailPage() {
 
   if (!programme) {
     return (
-      <div className="flex min-h-400px flex-col items-center justify-center">
+      <div className="flex min-h-96 flex-col items-center justify-center">
         <h2 className="text-xl font-bold">Programme not found</h2>
         <Link href="/programmes" className="mt-4">
           <Button variant="outline" className="border-2 shadow-retro-sm">
@@ -402,10 +438,7 @@ export default function ProgrammeDetailPage() {
         {/* Actions */}
         <div className="flex items-center gap-2">
           <Link href={`/programmes/${programme.id}/edit`}>
-            <Button
-              variant="outline"
-              className="border-2 shadow-retro-sm"
-            >
+            <Button variant="outline" className="border-2 shadow-retro-sm">
               <Edit className="mr-2 h-4 w-4" strokeWidth={1.5} />
               Edit
             </Button>
@@ -457,7 +490,6 @@ export default function ProgrammeDetailPage() {
               </p>
             ) : (
               <>
-                {/* Task stats bar */}
                 <div className="mt-4 flex items-center gap-4">
                   <span className="font-mono text-xs text-muted-foreground">
                     {taskStats.done}/{taskStats.total} done
@@ -479,7 +511,6 @@ export default function ProgrammeDetailPage() {
                   </div>
                 </div>
 
-                {/* Task list */}
                 <div className="mt-4 space-y-2">
                   {tasks.slice(0, 5).map((task) => {
                     const isOverdue =
@@ -523,7 +554,11 @@ export default function ProgrammeDetailPage() {
               </>
             )}
           </div>
-
+            {/* Analytics */}
+          <ProgrammeAnalytics
+            programmeId={programme.id}
+            programmeName={programme.name}
+          />
           {/* Recent Activity */}
           <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
             <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
@@ -568,7 +603,8 @@ export default function ProgrammeDetailPage() {
               </div>
             )}
           </div>
-           {/* Programme Discussion Thread */}
+
+          {/* Programme Discussion Thread */}
           <ThreadMessages programmeId={programme.id} title="Programme Discussion" />
         </div>
 
@@ -628,15 +664,27 @@ export default function ProgrammeDetailPage() {
                   </span>
                 )}
               </h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowManageMembers(true)}
-                className="border-2 text-xs shadow-retro-sm"
-              >
-                <Users className="mr-1 h-3 w-3" strokeWidth={1.5} />
-                Manage
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchMembers}
+                  disabled={isRefreshingMembers}
+                  className="border-2 text-xs shadow-retro-sm h-8 w-8 p-0"
+                  title="Refresh members"
+                >
+                  <RefreshCw className={`h-3 w-3 ${isRefreshingMembers ? "animate-spin" : ""}`} strokeWidth={1.5} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowManageMembers(true)}
+                  className="border-2 text-xs shadow-retro-sm"
+                >
+                  <Users className="mr-1 h-3 w-3" strokeWidth={1.5} />
+                  Manage
+                </Button>
+              </div>
             </div>
 
             {members.length === 0 ? (
@@ -664,6 +712,7 @@ export default function ProgrammeDetailPage() {
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleRemoveMember(member.id, member.user)}
                       className="rounded p-1 text-muted-foreground transition-colors hover:text-red-500"
                       title="Remove member"
@@ -712,6 +761,7 @@ export default function ProgrammeDetailPage() {
                 availableUsers.map((u) => (
                   <button
                     key={u.id}
+                    type="button"
                     onClick={() => handleAddMember(u.id)}
                     className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-left transition-all hover:border-foreground"
                   >
