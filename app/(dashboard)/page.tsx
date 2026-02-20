@@ -139,10 +139,7 @@ export default function DashboardPage() {
       setUpcomingTasks(upcoming);
 
       // ── 6. Activity scope via hierarchy ─────────────────────────────
-      // Admin: all activity
-      // Manager: self + direct reports
-      // Member: self only
-      let activityUserIds: string[] | null = null; // null = no filter (admin)
+      let activityUserIds: string[] | null = null;
 
       if (!isAdmin) {
         activityUserIds = [user.id];
@@ -291,6 +288,8 @@ export default function DashboardPage() {
         return `Sent email "${name}"`;
       case "email_drafted":
         return `Drafted reply to "${name}"`;
+      case "programme_member_added":
+        return `programme member added`;
       default:
         return log.action.replace(/_/g, " ");
     }
@@ -336,7 +335,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div className="h-10 w-64 animate-pulse rounded-lg bg-muted" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
@@ -349,11 +348,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             {getGreeting()}, {profile?.full_name?.split(" ")[0] || "there"}
           </h1>
           <p className="mt-1 font-mono text-sm text-muted-foreground">
@@ -361,7 +360,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <Link href="/tasks/new">
-          <Button className="border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5">
+          <Button className="w-full border-2 border-foreground bg-foreground text-background shadow-retro transition-all hover:shadow-retro-lg hover:-translate-x-0.5 hover:-translate-y-0.5 sm:w-auto">
             <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
             New Task
           </Button>
@@ -369,7 +368,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 sm:gap-4">
         <StatCard
           icon={CheckSquare}
           label="My Tasks"
@@ -404,15 +403,15 @@ export default function DashboardPage() {
       {/* Content Grid */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Upcoming Tasks */}
-        <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+        <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
           <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
-              <Calendar className="h-5 w-5" strokeWidth={1.5} />
+            <h2 className="flex items-center gap-2 text-base font-bold text-card-foreground sm:text-lg">
+              <Calendar className="h-5 w-5 shrink-0" strokeWidth={1.5} />
               Due This Week
             </h2>
             <Link
               href="/tasks"
-              className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+              className="flex shrink-0 items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
             >
               View all
               <ArrowRight className="h-3 w-3" />
@@ -429,16 +428,16 @@ export default function DashboardPage() {
                 <Link key={task.id} href={`/tasks/${task.id}`}>
                   <div className="group flex items-center justify-between rounded-xl border-2 border-border bg-background p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro-sm">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-card-foreground">
+                      <p className="truncate text-sm font-medium text-card-foreground sm:text-base">
                         {task.title}
                       </p>
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                      <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                         {task.programme?.name || "No programme"} •{" "}
                         {formatDate(task.due_date!)}
                       </p>
                     </div>
                     <span
-                      className={`ml-3 shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${getPriorityStyle(task.priority)}`}
+                      className={`ml-2 shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${getPriorityStyle(task.priority)}`}
                     >
                       {task.priority}
                     </span>
@@ -450,15 +449,15 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent Activity */}
-        <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+        <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
           <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
-              <Clock className="h-5 w-5" strokeWidth={1.5} />
+            <h2 className="flex items-center gap-2 text-base font-bold text-card-foreground sm:text-lg">
+              <Clock className="h-5 w-5 shrink-0" strokeWidth={1.5} />
               Recent Activity
             </h2>
             <Link
               href="/activity"
-              className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+              className="flex shrink-0 items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
             >
               View all
               <ArrowRight className="h-3 w-3" />
@@ -485,9 +484,9 @@ export default function DashboardPage() {
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-card-foreground">
+                      <p className="text-sm text-card-foreground">
                         <span className="font-medium">{getUserName(log.user_id)}</span>{" "}
-                        {getActivityLabel(log)}
+                        <span className="text-muted-foreground">{getActivityLabel(log)}</span>
                       </p>
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                         {formatActivityTime(log.created_at)}
@@ -502,15 +501,15 @@ export default function DashboardPage() {
       </div>
 
       {/* Upcoming Events */}
-      <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+      <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
-            <CalendarDays className="h-5 w-5" strokeWidth={1.5} />
+          <h2 className="flex items-center gap-2 text-base font-bold text-card-foreground sm:text-lg">
+            <CalendarDays className="h-5 w-5 shrink-0" strokeWidth={1.5} />
             Upcoming Events
           </h2>
           <Link
             href="/calendar"
-            className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+            className="flex shrink-0 items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
           >
             View calendar
             <ArrowRight className="h-3 w-3" />
@@ -539,7 +538,7 @@ export default function DashboardPage() {
             upcomingEvents.map((event) => (
               <Link key={event.id} href="/calendar">
                 <div className="group flex items-center justify-between rounded-xl border-2 border-border bg-background p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro-sm">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted">
                       {event.meeting_link ? (
                         <Video className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
@@ -548,16 +547,16 @@ export default function DashboardPage() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-card-foreground">
+                      <p className="truncate text-sm font-medium text-card-foreground sm:text-base">
                         {event.title}
                       </p>
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                      <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                         {formatDate(event.start_time)} • {formatEventTime(event.start_time, event.end_time, event.all_day)}
                       </p>
                     </div>
                   </div>
                   <span
-                    className={`ml-3 shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${getEventTypeStyle(event.event_type)}`}
+                    className={`ml-2 shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-medium uppercase ${getEventTypeStyle(event.event_type)}`}
                   >
                     {event.event_type}
                   </span>
@@ -569,12 +568,13 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
-        <h2 className="text-lg font-bold text-card-foreground">Quick Actions</h2>
+      <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
+        <h2 className="text-base font-bold text-card-foreground sm:text-lg">Quick Actions</h2>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link href="/tasks/new">
             <Button
               variant="outline"
+              size="sm"
               className="border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
             >
               <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
@@ -584,6 +584,7 @@ export default function DashboardPage() {
           <Link href="/programmes/new">
             <Button
               variant="outline"
+              size="sm"
               className="border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
             >
               <Plus className="mr-2 h-4 w-4" strokeWidth={1.5} />
@@ -593,6 +594,7 @@ export default function DashboardPage() {
           <Link href="/tasks">
             <Button
               variant="outline"
+              size="sm"
               className="border-2 shadow-retro-sm transition-all hover:shadow-retro hover:-translate-x-0.5 hover:-translate-y-0.5"
             >
               <CheckSquare className="mr-2 h-4 w-4" strokeWidth={1.5} />
@@ -623,7 +625,7 @@ function StatCard({
   return (
     <Link href={href}>
       <div
-        className={`group rounded-2xl border-2 p-5 shadow-retro-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro ${
+        className={`group overflow-hidden rounded-2xl border-2 p-4 shadow-retro-sm transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-retro sm:p-5 ${
           highlight
             ? "border-foreground bg-foreground"
             : "border-border bg-card"
@@ -631,26 +633,26 @@ function StatCard({
       >
         <div className="flex items-center justify-between">
           <div
-            className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 ${
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border-2 sm:h-10 sm:w-10 ${
               highlight
                 ? "border-background/20 bg-background/10"
                 : "border-border bg-background"
             }`}
           >
             <Icon
-              className={`h-5 w-5 ${highlight ? "text-background" : "text-muted-foreground"}`}
+              className={`h-4 w-4 sm:h-5 sm:w-5 ${highlight ? "text-background" : "text-muted-foreground"}`}
               strokeWidth={1.5}
             />
           </div>
         </div>
         <div className="mt-3">
           <p
-            className={`text-3xl font-bold ${highlight ? "text-background" : "text-foreground"}`}
+            className={`text-2xl font-bold sm:text-3xl ${highlight ? "text-background" : "text-foreground"}`}
           >
             {value}
           </p>
           <p
-            className={`font-mono text-xs ${highlight ? "text-background/80" : "text-muted-foreground"}`}
+            className={`font-mono text-[10px] sm:text-xs ${highlight ? "text-background/80" : "text-muted-foreground"}`}
           >
             {label} • {subtext}
           </p>

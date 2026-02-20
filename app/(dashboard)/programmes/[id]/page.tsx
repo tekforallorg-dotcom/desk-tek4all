@@ -220,7 +220,6 @@ export default function ProgrammeDetailPage() {
 
   useEffect(() => {
     if (!isLoading) {
-      // Use requestAnimationFrame to ensure DOM is painted
       requestAnimationFrame(() => {
         window.scrollTo(0, 0);
       });
@@ -253,7 +252,7 @@ export default function ProgrammeDetailPage() {
     router.push("/programmes");
   };
 
-const handleAddMembers = async () => {
+  const handleAddMembers = async () => {
     if (!user?.id || !programme || selectedMemberIds.length === 0) return;
     for (const id of selectedMemberIds) {
       await handleAddMember(id);
@@ -283,7 +282,7 @@ const handleAddMembers = async () => {
       .insert({
         programme_id: programmeId,
         user_id: userId,
-      })
+      });
 
     if (error) {
       console.error("Error adding member:", error.message);
@@ -299,7 +298,6 @@ const handleAddMembers = async () => {
       member_name: addedUser?.full_name || addedUser?.username || "",
     });
 
-    // Notify added member (fire and forget)
     if (userId !== user.id) {
       fetch("/api/notifications/programme-added", {
         method: "POST",
@@ -315,7 +313,6 @@ const handleAddMembers = async () => {
     await fetchMembers();
     setShowManageMembers(false);
   };
-
 
   const handleRemoveMember = async (memberId: string, memberUser: ProgrammeMember["user"]) => {
     if (!user?.id || !programme) return;
@@ -423,9 +420,9 @@ const handleAddMembers = async () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+      {/* Header — mobile-friendly stacked layout */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
           <Link href="/programmes">
             <Button
               variant="outline"
@@ -435,45 +432,45 @@ const handleAddMembers = async () => {
               <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
             </Button>
           </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                {programme.name}
-              </h1>
-              <span
-                className={cn(
-                  "rounded-full px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-wider",
-                  programme.status === "active"
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground"
-                )}
-              >
-                {statusLabel}
-              </span>
-            </div>
-            <p className="mt-1 font-mono text-sm text-muted-foreground">
-              Created {formatDate(programme.created_at)}
-            </p>
+          {/* Actions */}
+          <div className="flex items-center gap-2">
+            <Link href={`/programmes/${programme.id}/edit`}>
+              <Button variant="outline" size="sm" className="border-2 shadow-retro-sm">
+                <Edit className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                Edit
+              </Button>
+            </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={isDeleting}
+              className="border-2 text-red-500 shadow-retro-sm hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+              <span className="ml-2 hidden sm:inline">Delete</span>
+            </Button>
           </div>
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Link href={`/programmes/${programme.id}/edit`}>
-            <Button variant="outline" className="border-2 shadow-retro-sm">
-              <Edit className="mr-2 h-4 w-4" strokeWidth={1.5} />
-              Edit
-            </Button>
-          </Link>
-          <Button
-            variant="outline"
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={isDeleting}
-            className="border-2 text-red-500 shadow-retro-sm hover:bg-red-50"
-          >
-            <Trash2 className="mr-2 h-4 w-4" strokeWidth={1.5} />
-            Delete
-          </Button>
+        <div>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              {programme.name}
+            </h1>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-wider",
+                programme.status === "active"
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          <p className="mt-1 font-mono text-sm text-muted-foreground">
+            Created {formatDate(programme.created_at)}
+          </p>
         </div>
       </div>
 
@@ -482,18 +479,18 @@ const handleAddMembers = async () => {
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-6">
           {/* Description */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
               <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
               Description
             </h2>
-            <p className="mt-4 whitespace-pre-wrap text-muted-foreground">
+            <p className="mt-4 whitespace-pre-wrap text-sm text-muted-foreground sm:text-base">
               {programme.description || "No description provided."}
             </p>
           </div>
 
           {/* Tasks Summary */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
                 <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
@@ -512,7 +509,7 @@ const handleAddMembers = async () => {
               </p>
             ) : (
               <>
-                <div className="mt-4 flex items-center gap-4">
+                <div className="mt-4 flex flex-wrap items-center gap-3 sm:gap-4">
                   <span className="font-mono text-xs text-muted-foreground">
                     {taskStats.done}/{taskStats.total} done
                   </span>
@@ -521,7 +518,7 @@ const handleAddMembers = async () => {
                       {taskStats.overdue} overdue
                     </span>
                   )}
-                  <div className="flex-1">
+                  <div className="w-full sm:w-auto sm:flex-1">
                     <div className="h-2 overflow-hidden rounded-full border border-border bg-muted">
                       <div
                         className="h-full rounded-full bg-foreground transition-all"
@@ -555,7 +552,7 @@ const handleAddMembers = async () => {
                             )}
                           </div>
                           <span
-                            className={`flex-1 truncate text-sm ${
+                            className={`min-w-0 flex-1 truncate text-sm ${
                               task.status === "done" || task.status === "completed"
                                 ? "line-through opacity-60"
                                 : "text-foreground"
@@ -576,13 +573,15 @@ const handleAddMembers = async () => {
               </>
             )}
           </div>
-            {/* Analytics */}
+
+          {/* Analytics */}
           <ProgrammeAnalytics
             programmeId={programme.id}
             programmeName={programme.name}
           />
+
           {/* Recent Activity */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
               <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
               Recent Activity
@@ -633,12 +632,12 @@ const handleAddMembers = async () => {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Details */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="text-lg font-bold text-card-foreground">Details</h2>
             <dl className="mt-4 space-y-4">
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" strokeWidth={1.5} />
+                  <Calendar className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   Start Date
                 </dt>
                 <dd className="font-mono text-sm font-medium">
@@ -647,7 +646,7 @@ const handleAddMembers = async () => {
               </div>
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" strokeWidth={1.5} />
+                  <Calendar className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   End Date
                 </dt>
                 <dd className="font-mono text-sm font-medium">
@@ -656,7 +655,7 @@ const handleAddMembers = async () => {
               </div>
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <FolderKanban className="h-4 w-4" strokeWidth={1.5} />
+                  <FolderKanban className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   Tasks
                 </dt>
                 <dd className="font-mono text-sm font-medium">
@@ -665,7 +664,7 @@ const handleAddMembers = async () => {
               </div>
               <div className="flex items-center justify-between">
                 <dt className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" strokeWidth={1.5} />
+                  <Clock className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   Last Updated
                 </dt>
                 <dd className="font-mono text-sm font-medium">
@@ -676,7 +675,7 @@ const handleAddMembers = async () => {
           </div>
 
           {/* Team */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-card-foreground">
                 Team
@@ -720,12 +719,12 @@ const handleAddMembers = async () => {
                     key={member.id}
                     className="flex items-center justify-between rounded-lg border border-border p-2"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-muted font-mono text-[10px]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted font-mono text-[10px]">
                         {getInitials(member.user.full_name, member.user.username)}
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
                           {member.user.full_name || member.user.username}
                         </p>
                         <p className="font-mono text-[10px] text-muted-foreground">
@@ -736,7 +735,7 @@ const handleAddMembers = async () => {
                     <button
                       type="button"
                       onClick={() => handleRemoveMember(member.id, member.user)}
-                      className="rounded p-1 text-muted-foreground transition-colors hover:text-red-500"
+                      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-red-500"
                       title="Remove member"
                     >
                       <X className="h-4 w-4" />
@@ -799,7 +798,7 @@ const handleAddMembers = async () => {
                       }`}
                     >
                       <div
-                        className={`flex h-5 w-5 items-center justify-center rounded border-2 text-xs ${
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 text-xs ${
                           isSelected
                             ? "border-foreground bg-foreground text-background"
                             : "border-border"
@@ -807,14 +806,14 @@ const handleAddMembers = async () => {
                       >
                         {isSelected && "✓"}
                       </div>
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
                         {getInitials(u.full_name, u.username)}
                       </div>
-                      <div>
-                        <p className="font-medium">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
                           {u.full_name || u.username}
                         </p>
-                        <p className="font-mono text-xs text-muted-foreground">
+                        <p className="truncate font-mono text-xs text-muted-foreground">
                           {u.email}
                         </p>
                       </div>
