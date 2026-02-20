@@ -1,8 +1,10 @@
+// DESTINATION: app/(dashboard)/programmes/page.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, FolderKanban, Calendar, Users } from "lucide-react";
+import { Plus, FolderKanban, Calendar, Users, ArrowUpDown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import type { Programme } from "@/lib/types/programme";
@@ -15,11 +17,12 @@ interface ProgrammeWithCount extends Programme {
 export default function ProgrammesPage() {
   const [programmes, setProgrammes] = useState<ProgrammeWithCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<"latest" | "alphabetical" | "updated">("latest");
 
   useEffect(() => {
     const fetchProgrammes = async () => {
       const supabase = createClient();
-      
+
       // Fetch programmes
       const { data: programmesData, error } = await supabase
         .from("programmes")
@@ -34,7 +37,7 @@ export default function ProgrammesPage() {
 
       // Fetch member counts for all programmes
       const programmeIds = (programmesData || []).map((p) => p.id);
-      
+
       if (programmeIds.length > 0) {
         const { data: memberCounts } = await supabase
           .from("programme_members")
@@ -84,6 +87,20 @@ export default function ProgrammesPage() {
         </Link>
       </div>
 
+      {/* Sort */}
+      <div className="flex items-center gap-2">
+        <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          className="rounded-xl border-2 border-border bg-background px-3 py-2 font-mono text-sm shadow-retro-sm focus:shadow-retro focus:outline-none"
+        >
+          <option value="latest">Latest</option>
+          <option value="alphabetical">Alphabetical</option>
+          <option value="updated">Recently Updated</option>
+        </select>
+      </div>
+
       {/* Content */}
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -98,9 +115,22 @@ export default function ProgrammesPage() {
         <EmptyState />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {programmes.map((programme) => (
-            <ProgrammeCard key={programme.id} programme={programme} />
-          ))}
+          {[...programmes]
+            .sort((a, b) => {
+              if (sortBy === "alphabetical") return a.name.localeCompare(b.name);
+              if (sortBy === "updated")
+                return (
+                  new Date(b.updated_at || b.created_at).getTime() -
+                  new Date(a.updated_at || a.created_at).getTime()
+                );
+              return (
+                new Date(b.created_at).getTime() -
+                new Date(a.created_at).getTime()
+              );
+            })
+            .map((programme) => (
+              <ProgrammeCard key={programme.id} programme={programme} />
+            ))}
         </div>
       )}
     </div>
@@ -130,13 +160,16 @@ function ProgrammeCard({ programme }: { programme: ProgrammeWithCount }) {
               programme.status === "active"
                 ? "bg-foreground text-background"
                 : programme.status === "completed"
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground"
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground"
             )}
           >
             {statusLabel}
           </span>
-          <FolderKanban className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
+          <FolderKanban
+            className="h-5 w-5 text-muted-foreground"
+            strokeWidth={1.5}
+          />
         </div>
 
         {/* Title */}
@@ -157,7 +190,8 @@ function ProgrammeCard({ programme }: { programme: ProgrammeWithCount }) {
           </span>
           <span className="flex items-center gap-1">
             <Users className="h-3.5 w-3.5" strokeWidth={1.5} />
-            {programme.member_count} member{programme.member_count !== 1 ? "s" : ""}
+            {programme.member_count} member
+            {programme.member_count !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
@@ -169,9 +203,14 @@ function EmptyState() {
   return (
     <div className="flex min-h-400px flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-card p-12 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-border bg-background shadow-retro-sm">
-        <FolderKanban className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
+        <FolderKanban
+          className="h-8 w-8 text-muted-foreground"
+          strokeWidth={1.5}
+        />
       </div>
-      <h2 className="mt-6 text-xl font-bold text-foreground">No programmes yet</h2>
+      <h2 className="mt-6 text-xl font-bold text-foreground">
+        No programmes yet
+      </h2>
       <p className="mt-2 max-w-sm font-mono text-sm text-muted-foreground">
         Create your first programme to start organizing your initiatives.
       </p>
