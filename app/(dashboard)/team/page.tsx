@@ -52,7 +52,10 @@ export default function TeamPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
-  const isManager = profile?.role === "manager" || profile?.role === "admin" || profile?.role === "super_admin";
+  const isManager =
+    profile?.role === "manager" ||
+    profile?.role === "admin" ||
+    profile?.role === "super_admin";
 
   useEffect(() => {
     const fetchTeamData = async () => {
@@ -78,9 +81,9 @@ export default function TeamPage() {
             .neq("id", user.id)
             .order("full_name");
           setTeamMembers(allUsers || []);
-          
+
           if (allUsers && allUsers.length > 0) {
-            await fetchTeamTasks(allUsers.map(u => u.id));
+            await fetchTeamTasks(allUsers.map((u) => u.id));
           }
         }
         setIsLoading(false);
@@ -105,7 +108,7 @@ export default function TeamPage() {
 
     const fetchTeamTasks = async (memberIds: string[]) => {
       const supabase = createClient();
-      
+
       // FIX: Use task_assignees for many-to-many assignments
       // instead of tasks.assignee_id (single UUID)
       const { data: assignments } = await supabase
@@ -115,7 +118,12 @@ export default function TeamPage() {
 
       if (!assignments || assignments.length === 0) {
         setTeamTasks([]);
-        setStats({ totalTasks: 0, completedTasks: 0, overdueTasks: 0, dueThisWeek: 0 });
+        setStats({
+          totalTasks: 0,
+          completedTasks: 0,
+          overdueTasks: 0,
+          dueThisWeek: 0,
+        });
         return;
       }
 
@@ -125,7 +133,9 @@ export default function TeamPage() {
       // Fetch full task data
       const { data: tasksData } = await supabase
         .from("tasks")
-        .select("id, title, status, priority, due_date, programme:programmes(name)")
+        .select(
+          "id, title, status, priority, due_date, programme:programmes(name)"
+        )
         .in("id", taskIds)
         .order("due_date", { ascending: true });
 
@@ -151,7 +161,9 @@ export default function TeamPage() {
             priority: t.priority,
             due_date: t.due_date,
             assignee_id: userId,
-            programme: Array.isArray(t.programme) ? t.programme[0] : t.programme,
+            programme: Array.isArray(t.programme)
+              ? t.programme[0]
+              : t.programme,
           });
         }
       }
@@ -164,13 +176,17 @@ export default function TeamPage() {
       const weekFromNow = new Date();
       weekFromNow.setDate(weekFromNow.getDate() + 7);
 
-      const completed = uniqueTasks.filter((t) => t.status === "completed" || t.status === "done").length;
+      const completed = uniqueTasks.filter(
+        (t) => t.status === "completed" || t.status === "done"
+      ).length;
       const overdue = uniqueTasks.filter((t) => {
-        if (!t.due_date || t.status === "completed" || t.status === "done") return false;
+        if (!t.due_date || t.status === "completed" || t.status === "done")
+          return false;
         return new Date(t.due_date) < now;
       }).length;
       const dueThisWeek = uniqueTasks.filter((t) => {
-        if (!t.due_date || t.status === "completed" || t.status === "done") return false;
+        if (!t.due_date || t.status === "completed" || t.status === "done")
+          return false;
         const dueDate = new Date(t.due_date);
         return dueDate >= now && dueDate <= weekFromNow;
       }).length;
@@ -195,9 +211,13 @@ export default function TeamPage() {
   // Deduplicate tasks for display (a task shared by 2 members shows once in "All")
   const deduplicatedTasks = selectedMember
     ? filteredTasks
-    : Array.from(new Map(filteredTasks.map((t) => [t.title + t.status, t])).values());
+    : Array.from(
+        new Map(filteredTasks.map((t) => [t.title + t.status, t])).values()
+      );
 
-  const activeTasks = deduplicatedTasks.filter((t) => t.status !== "completed" && t.status !== "done");
+  const activeTasks = deduplicatedTasks.filter(
+    (t) => t.status !== "completed" && t.status !== "done"
+  );
   const overdueTasks = activeTasks.filter((t) => {
     if (!t.due_date) return false;
     return new Date(t.due_date) < new Date();
@@ -239,11 +259,14 @@ export default function TeamPage() {
 
   if (authLoading) {
     return (
-      <div className="space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
         <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl border-2 border-border bg-card" />
+            <div
+              key={i}
+              className="h-24 animate-pulse rounded-xl border-2 border-border bg-card"
+            />
           ))}
         </div>
       </div>
@@ -268,73 +291,95 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           Team Overview
         </h1>
         <p className="mt-1 font-mono text-sm text-muted-foreground">
-          {teamMembers.length} team member{teamMembers.length !== 1 ? "s" : ""}
+          {teamMembers.length} team member
+          {teamMembers.length !== 1 ? "s" : ""}
         </p>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <div className="rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
+      {/* Stats — always 2-col on mobile, 4-col on lg */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="overflow-hidden rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-muted">
-              <CheckSquare className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted sm:h-10 sm:w-10">
+              <CheckSquare
+                className="h-4 w-4 text-muted-foreground sm:h-5 sm:w-5"
+                strokeWidth={1.5}
+              />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-2xl font-bold">{stats.totalTasks}</p>
-              <p className="font-mono text-xs text-muted-foreground">Total Tasks</p>
+              <p className="truncate font-mono text-xs text-muted-foreground">
+                Total Tasks
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
+        <div className="overflow-hidden rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-green-50">
-              <CheckSquare className="h-5 w-5 text-green-600" strokeWidth={1.5} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-green-50 sm:h-10 sm:w-10">
+              <CheckSquare
+                className="h-4 w-4 text-green-600 sm:h-5 sm:w-5"
+                strokeWidth={1.5}
+              />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-2xl font-bold">{stats.completedTasks}</p>
-              <p className="font-mono text-xs text-muted-foreground">Completed</p>
+              <p className="truncate font-mono text-xs text-muted-foreground">
+                Completed
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
+        <div className="overflow-hidden rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-red-50">
-              <AlertCircle className="h-5 w-5 text-red-600" strokeWidth={1.5} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-red-50 sm:h-10 sm:w-10">
+              <AlertCircle
+                className="h-4 w-4 text-red-600 sm:h-5 sm:w-5"
+                strokeWidth={1.5}
+              />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-2xl font-bold">{stats.overdueTasks}</p>
-              <p className="font-mono text-xs text-muted-foreground">Overdue</p>
+              <p className="truncate font-mono text-xs text-muted-foreground">
+                Overdue
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
+        <div className="overflow-hidden rounded-xl border-2 border-border bg-card p-4 shadow-retro-sm">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-border bg-blue-50">
-              <Clock className="h-5 w-5 text-blue-600" strokeWidth={1.5} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-blue-50 sm:h-10 sm:w-10">
+              <Clock
+                className="h-4 w-4 text-blue-600 sm:h-5 sm:w-5"
+                strokeWidth={1.5}
+              />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-2xl font-bold">{stats.dueThisWeek}</p>
-              <p className="font-mono text-xs text-muted-foreground">Due This Week</p>
+              <p className="truncate font-mono text-xs text-muted-foreground">
+                Due This Week
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* Content grid */}
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Team Members */}
-        <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
-          <h2 className="font-bold">Team Members</h2>
-          <div className="mt-4 space-y-2">
+        <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
+          <h2 className="text-base font-bold sm:text-lg">Members</h2>
+          <div className="mt-3 space-y-2 sm:mt-4">
             <button
               onClick={() => setSelectedMember(null)}
               className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
@@ -343,18 +388,28 @@ export default function TeamPage() {
                   : "border-border hover:border-foreground"
               }`}
             >
-              <Users className="h-5 w-5" strokeWidth={1.5} />
+              <Users className="h-5 w-5 shrink-0" strokeWidth={1.5} />
               <span className="font-medium">All Members</span>
               <span className="ml-auto font-mono text-xs opacity-70">
-                {teamTasks.filter((t) => t.status !== "completed" && t.status !== "done").length}
+                {
+                  teamTasks.filter(
+                    (t) =>
+                      t.status !== "completed" && t.status !== "done"
+                  ).length
+                }
               </span>
             </button>
 
             {teamMembers.map((member) => {
               const memberTasks = teamTasks.filter(
-                (t) => t.assignee_id === member.id && t.status !== "completed" && t.status !== "done"
+                (t) =>
+                  t.assignee_id === member.id &&
+                  t.status !== "completed" &&
+                  t.status !== "done"
               );
-              const memberOverdue = memberTasks.filter((t) => isOverdue(t.due_date));
+              const memberOverdue = memberTasks.filter((t) =>
+                isOverdue(t.due_date)
+              );
 
               return (
                 <button
@@ -366,7 +421,7 @@ export default function TeamPage() {
                       : "border-border hover:border-foreground"
                   }`}
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-current bg-transparent font-mono text-xs">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-current bg-transparent font-mono text-xs">
                     {(member.full_name || member.username)[0].toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -374,7 +429,7 @@ export default function TeamPage() {
                       {member.full_name || member.username}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {memberOverdue.length > 0 && (
                       <span className="rounded bg-red-500 px-1.5 py-0.5 font-mono text-[10px] text-white">
                         {memberOverdue.length}
@@ -397,14 +452,17 @@ export default function TeamPage() {
         </div>
 
         {/* Tasks List */}
-        <div className="lg:col-span-2 rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+        <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6 lg:col-span-2">
           <div className="flex items-center justify-between">
-            <h2 className="font-bold">
+            <h2 className="min-w-0 truncate text-base font-bold sm:text-lg">
               {selectedMember
-                ? `${teamMembers.find((m) => m.id === selectedMember)?.full_name || "Member"}'s Tasks`
+                ? `${
+                    teamMembers.find((m) => m.id === selectedMember)
+                      ?.full_name || "Member"
+                  }'s Tasks`
                 : "All Team Tasks"}
             </h2>
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
               {activeTasks.length} active
             </span>
           </div>
@@ -413,7 +471,7 @@ export default function TeamPage() {
           {overdueTasks.length > 0 && (
             <div className="mt-4">
               <p className="flex items-center gap-2 font-mono text-xs font-medium uppercase text-red-600">
-                <AlertCircle className="h-3 w-3" />
+                <AlertCircle className="h-3 w-3 shrink-0" />
                 Overdue ({overdueTasks.length})
               </p>
               <div className="mt-2 space-y-2">
@@ -424,12 +482,12 @@ export default function TeamPage() {
                         <p className="truncate font-medium text-red-900">
                           {task.title}
                         </p>
-                        <p className="font-mono text-xs text-red-600">
+                        <p className="truncate font-mono text-xs text-red-600">
                           Due {formatDate(task.due_date)}
                           {task.programme && ` · ${task.programme.name}`}
                         </p>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-red-400" />
+                      <ArrowRight className="h-4 w-4 shrink-0 text-red-400" />
                     </div>
                   </Link>
                 ))}
@@ -451,24 +509,25 @@ export default function TeamPage() {
                     <div className="flex items-center gap-3 rounded-xl border-2 border-border p-3 transition-all hover:border-foreground">
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{task.title}</p>
-                        <p className="font-mono text-xs text-muted-foreground">
+                        <p className="truncate font-mono text-xs text-muted-foreground">
                           {formatDate(task.due_date)}
                           {task.programme && ` · ${task.programme.name}`}
                         </p>
                       </div>
                       <span
-                        className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${getPriorityColor(
+                        className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] ${getPriorityColor(
                           task.priority
                         )}`}
                       >
                         {task.priority}
                       </span>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </div>
                   </Link>
                 ))}
 
-              {activeTasks.filter((t) => !isOverdue(t.due_date)).length === 0 && (
+              {activeTasks.filter((t) => !isOverdue(t.due_date)).length ===
+                0 && (
                 <p className="py-8 text-center font-mono text-sm text-muted-foreground">
                   No active tasks.
                 </p>
