@@ -58,6 +58,54 @@ export function LunaDrawer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, close]);
 
+  /* ── Mobile: lock body scroll when drawer is open ── */
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const isMobile = window.innerWidth < 768;
+    if (!isMobile) return;
+
+    // Lock body scroll
+    const prev = document.body.style.overflow;
+    const prevPosition = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const scrollY = window.scrollY;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+
+    return () => {
+      document.body.style.overflow = prev;
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.width = "";
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen]);
+
+  /* ── Mobile: prevent keyboard from resizing drawer ── */
+  useEffect(() => {
+    if (!isOpen) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const dialog = document.querySelector<HTMLElement>("[role='dialog'][aria-label='Luna assistant']");
+    if (!dialog) return;
+
+    function handleResize() {
+      // When keyboard opens, visualViewport height shrinks.
+      // Keep drawer pinned at its original position by adjusting bottom.
+      if (!vv || !dialog) return;
+      const offsetFromBottom = window.innerHeight - (vv.height + vv.offsetTop);
+      dialog.style.bottom = `${80 + offsetFromBottom}px`;
+    }
+
+    vv.addEventListener("resize", handleResize);
+    return () => vv.removeEventListener("resize", handleResize);
+  }, [isOpen]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isTyping) return;
@@ -262,7 +310,11 @@ export function LunaDrawer() {
             right: 5vw !important;
             bottom: 80px !important;
             width: auto !important;
-            max-height: 50vh !important;
+            max-height: 420px !important;
+            height: 420px !important;
+            /* Prevent keyboard-triggered resize/zoom */
+            transform: translateZ(0);
+            -webkit-transform: translateZ(0);
           }
         }
       `}</style>

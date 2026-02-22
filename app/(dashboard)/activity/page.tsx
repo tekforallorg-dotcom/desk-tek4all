@@ -107,6 +107,10 @@ export default function ActivityPage() {
       // Exclude email_classified
       query = query.not("action", "eq", "email_classified");
 
+      // Exclude Luna telemetry events (luna_message_sent, luna_intent_classified, etc.)
+      // Real actions done via Luna (task_created, programme_created) pass through — no luna_ prefix
+      query = query.not("action", "like", "luna_%");
+
       // ── Role-based scoping ──────────────────────────────────────────
       // null = admin (no filter), array = specific user IDs
       if (userIds !== null && userIds.length > 0) {
@@ -229,6 +233,16 @@ export default function ActivityPage() {
         return { verb: "Updated programme", subject: name };
       case "programme_deleted":
         return { verb: "Deleted programme", subject: name };
+      case "programme_status_updated":
+        return {
+          verb: "Updated programme status",
+          subject: `${name} → ${log.details?.to_status || ""}`,
+        };
+      case "programme_field_updated":
+        return {
+          verb: `Updated programme ${log.details?.field || "field"}`,
+          subject: name,
+        };
       case "login":
       case "user_login":
         return { verb: "Signed in", subject: "" };

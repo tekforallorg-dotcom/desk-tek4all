@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
     await emitEvent(supabase, {
       user_id: user.id,
       event_type: eventType,
-      metadata: body.metadata || {},
+      metadata: typeof body.metadata === "object" && body.metadata !== null
+        ? JSON.parse(JSON.stringify(body.metadata)) // Deep clone to strip prototypes
+        : {},
     });
 
     return NextResponse.json({ ok: true });

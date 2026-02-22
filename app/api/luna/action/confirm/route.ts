@@ -17,6 +17,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { emit } from "@/lib/luna/telemetry";
 import { getActivePending, completePending } from "@/lib/luna/pending";
+import {
+  sanitizeText,
+  parseUUID,
+  isValidISODate,
+  validateEnum,
+  VALID_TASK_STATUSES,
+  VALID_PROGRAMME_STATUSES,
+  VALID_PRIORITIES,
+  VALID_PROGRAMME_FIELDS,
+  MAX_TITLE_LENGTH,
+  MAX_DESCRIPTION_LENGTH,
+} from "@/lib/luna/sanitize";
 
 export async function POST(request: NextRequest) {
   try {
@@ -99,23 +111,28 @@ async function handleCreateTask(
   userId: string,
   payload: Record<string, unknown>
 ) {
-  const title = String(payload.title || "").trim();
+  const title = sanitizeText(payload.title, MAX_TITLE_LENGTH);
   if (!title) {
     return NextResponse.json({ error: "Task title is required" }, { status: 400 });
   }
 
-  const assigneeId = String(payload.assignee_id || userId);
+  const description = sanitizeText(payload.description, MAX_DESCRIPTION_LENGTH) || null;
+  const assigneeId = parseUUID(payload.assignee_id) || userId;
+  const programmeId = parseUUID(payload.programme_id) || null;
+  const status = validateEnum(payload.status, VALID_TASK_STATUSES, "todo") || "todo";
+  const priority = validateEnum(payload.priority, VALID_PRIORITIES, "medium") || "medium";
+  const dueDate = payload.due_date && isValidISODate(payload.due_date) ? String(payload.due_date) : null;
 
-  // Insert task (matches tasks/new/page.tsx pattern exactly)
+  // Insert task
   const { data: task, error: insertError } = await supabase
     .from("tasks")
     .insert({
       title,
-      description: payload.description || null,
-      status: String(payload.status || "todo"),
-      priority: String(payload.priority || "medium"),
-      due_date: payload.due_date || null,
-      programme_id: payload.programme_id || null,
+      description,
+      status,
+      priority,
+      due_date: dueDate,
+      programme_id: programmeId,
       assignee_id: assigneeId,
       created_by: userId,
       evidence_required: Boolean(payload.evidence_required),
@@ -163,16 +180,14 @@ async function handleUpdateTaskStatus(
   userId: string,
   payload: Record<string, unknown>
 ) {
-  const taskId = String(payload.task_id || "").trim();
-  const newStatus = String(payload.new_status || "").trim();
+  const taskId = parseUUID(payload.task_id);
+  const newStatus = validateEnum(payload.new_status, VALID_TASK_STATUSES);
 
-  if (!taskId || !newStatus) {
-    return NextResponse.json({ error: "task_id and new_status are required" }, { status: 400 });
+  if (!taskId) {
+    return NextResponse.json({ error: "Valid task_id is required" }, { status: 400 });
   }
-
-  const validStatuses = ["todo", "in_progress", "pending_review", "done", "blocked"];
-  if (!validStatuses.includes(newStatus)) {
-    return NextResponse.json({ error: `Invalid status: ${newStatus}` }, { status: 400 });
+  if (!newStatus) {
+    return NextResponse.json({ error: `Invalid status. Allowed: ${VALID_TASK_STATUSES.join(", ")}` }, { status: 400 });
   }
 
   // Get current task to log the change
@@ -236,19 +251,24 @@ async function handleCreateProgramme(
     return NextResponse.json({ error: "Permission denied. Manager+ required." }, { status: 403 });
   }
 
-  const name = String(payload.name || "").trim();
+  const name = sanitizeText(payload.name, MAX_TITLE_LENGTH);
   if (!name) {
     return NextResponse.json({ error: "Programme name is required" }, { status: 400 });
   }
+
+  const description = sanitizeText(payload.description, MAX_DESCRIPTION_LENGTH) || null;
+  const status = validateEnum(payload.status, VALID_PROGRAMME_STATUSES, "draft") || "draft";
+  const startDate = payload.start_date && isValidISODate(payload.start_date) ? String(payload.start_date) : null;
+  const endDate = payload.end_date && isValidISODate(payload.end_date) ? String(payload.end_date) : null;
 
   const { data: programme, error: insertError } = await supabase
     .from("programmes")
     .insert({
       name,
-      description: payload.description || null,
-      status: String(payload.status || "draft"),
-      start_date: payload.start_date || null,
-      end_date: payload.end_date || null,
+      description,
+      status,
+      start_date: startDate,
+      end_date: endDate,
       created_by: userId,
     })
     .select()
@@ -296,16 +316,14 @@ async function handleUpdateProgrammeStatus(
     return NextResponse.json({ error: "Permission denied. Manager+ required." }, { status: 403 });
   }
 
-  const programmeId = String(payload.programme_id || "").trim();
-  const newStatus = String(payload.new_status || "").trim();
+  const programmeId = parseUUID(payload.programme_id);
+  const newStatus = validateEnum(payload.new_status, VALID_PROGRAMME_STATUSES);
 
-  if (!programmeId || !newStatus) {
-    return NextResponse.json({ error: "programme_id and new_status are required" }, { status: 400 });
+  if (!programmeId) {
+    return NextResponse.json({ error: "Valid programme_id is required" }, { status: 400 });
   }
-
-  const validStatuses = ["draft", "active", "paused", "completed", "archived"];
-  if (!validStatuses.includes(newStatus)) {
-    return NextResponse.json({ error: `Invalid status: ${newStatus}` }, { status: 400 });
+  if (!newStatus) {
+    return NextResponse.json({ error: `Invalid status. Allowed: ${VALID_PROGRAMME_STATUSES.join(", ")}` }, { status: 400 });
   }
 
   // Get current programme
@@ -369,18 +387,32 @@ async function handleUpdateProgrammeFields(
     return NextResponse.json({ error: "Permission denied. Manager+ required." }, { status: 403 });
   }
 
-  const programmeId = String(payload.programme_id || "").trim();
-  const updateField = String(payload.update_field || "").trim();
-  const updateValue = String(payload.update_value || "").trim();
-  const programmeName = String(payload.programme_name || "").trim();
+  const programmeId = parseUUID(payload.programme_id);
+  const updateField = validateEnum(payload.update_field, VALID_PROGRAMME_FIELDS);
+  const programmeName = sanitizeText(payload.programme_name, MAX_TITLE_LENGTH);
 
-  if (!programmeId || !updateField || !updateValue) {
-    return NextResponse.json({ error: "programme_id, update_field, and update_value are required" }, { status: 400 });
+  if (!programmeId) {
+    return NextResponse.json({ error: "Valid programme_id is required" }, { status: 400 });
+  }
+  if (!updateField) {
+    return NextResponse.json({ error: `Invalid field. Allowed: ${VALID_PROGRAMME_FIELDS.join(", ")}` }, { status: 400 });
   }
 
-  const allowedFields = ["name", "description", "start_date", "end_date"];
-  if (!allowedFields.includes(updateField)) {
-    return NextResponse.json({ error: `Cannot update field: ${updateField}` }, { status: 400 });
+  // Sanitize value based on field type
+  let updateValue: string;
+  if (updateField === "start_date" || updateField === "end_date") {
+    updateValue = String(payload.update_value || "").trim();
+    if (!isValidISODate(updateValue)) {
+      return NextResponse.json({ error: `Invalid date format. Use YYYY-MM-DD.` }, { status: 400 });
+    }
+  } else if (updateField === "name") {
+    updateValue = sanitizeText(payload.update_value, MAX_TITLE_LENGTH);
+  } else {
+    updateValue = sanitizeText(payload.update_value, MAX_DESCRIPTION_LENGTH);
+  }
+
+  if (!updateValue) {
+    return NextResponse.json({ error: "update_value is required" }, { status: 400 });
   }
 
   // Validate name uniqueness if renaming

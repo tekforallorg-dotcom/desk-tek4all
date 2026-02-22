@@ -33,6 +33,7 @@ import {
   purgeOldRecords,
 } from "@/lib/luna/pending";
 import { emit } from "@/lib/luna/telemetry";
+import { sanitizeMessage, sanitizeText, sanitizeHistory, MAX_MESSAGE_LENGTH } from "@/lib/luna/sanitize";
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,12 +47,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const message = String(body.message || "").trim();
-    const pageContext = String(body.pageContext || "Dashboard");
-    const history: ChatHistoryMessage[] = Array.isArray(body.history) ? body.history : [];
+    const message = sanitizeMessage(body.message);
+    const pageContext = sanitizeText(body.pageContext, 100) || "Dashboard";
+    const history = sanitizeHistory(body.history) as ChatHistoryMessage[];
 
     if (!message) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
+    }
+
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return NextResponse.json({ error: `Message too long (max ${MAX_MESSAGE_LENGTH} chars)` }, { status: 400 });
     }
 
     // Telemetry: message received + opportunistic cleanup of old records
