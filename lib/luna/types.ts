@@ -27,6 +27,8 @@ export interface LunaMessage {
   clarify?: LunaClarifyInfo;
   /** Playbook step progress (Run Mode) */
   playbookProgress?: PlaybookProgress;
+  /** Original user message to retry on error */
+  retryContent?: string;
 }
 
 /* ── Action Preview (Preview + Confirm) ── */

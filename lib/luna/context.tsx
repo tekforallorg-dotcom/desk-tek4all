@@ -36,6 +36,7 @@ interface LunaContextValue {
   sendMessage: (content: string) => void;
   confirmAction: (actionId: string) => void;
   cancelAction: (actionId: string) => void;
+  retryMessage: (messageId: string) => void;
   isTyping: boolean;
   /** Active clarify mode info (if Luna is waiting for a field) */
   clarifyInfo: LunaClarifyInfo | null;
@@ -238,13 +239,21 @@ export function LunaProvider({ children }: { children: ReactNode }) {
 
         console.error("Luna API error:", error);
         setClarifyInfo(null);
+
+        const isNetworkError =
+          error instanceof TypeError && error.message.includes("fetch");
+        const errorText = isNetworkError
+          ? "Network error — check your connection and try again."
+          : "Sorry, something went wrong. Please try again.";
+
         setMessages((prev) => [
           ...prev,
           {
             id: `msg-${Date.now()}-e`,
             role: "assistant",
-            content: "Sorry, something went wrong. Please try again.",
+            content: errorText,
             timestamp: new Date(),
+            retryContent: trimmed, // Store original message for retry
           },
         ]);
       } finally {
@@ -342,13 +351,36 @@ export function LunaProvider({ children }: { children: ReactNode }) {
     setClarifyInfo(null);
   }, []);
 
+  /* ── Retry Failed Message ── */
+  const retryMessage = useCallback(
+    (messageId: string) => {
+      const errorMsg = messagesRef.current.find((m) => m.id === messageId);
+      if (!errorMsg?.retryContent) return;
+
+      const content = errorMsg.retryContent;
+
+      // Remove the error message and the original user message before it
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId);
+        if (idx < 0) return prev;
+        // Remove user msg before error + the error itself
+        const start = idx > 0 && prev[idx - 1]?.role === "user" ? idx - 1 : idx;
+        return [...prev.slice(0, start), ...prev.slice(idx + 1)];
+      });
+
+      // Re-send
+      sendMessage(content);
+    },
+    [sendMessage]
+  );
+
   const value = useMemo<LunaContextValue>(
     () => ({
       isOpen, open, close, toggle, pageContext,
-      messages, sendMessage, confirmAction, cancelAction,
+      messages, sendMessage, confirmAction, cancelAction, retryMessage,
       isTyping, clarifyInfo, userRole,
     }),
-    [isOpen, open, close, toggle, pageContext, messages, sendMessage, confirmAction, cancelAction, isTyping, clarifyInfo, userRole],
+    [isOpen, open, close, toggle, pageContext, messages, sendMessage, confirmAction, cancelAction, retryMessage, isTyping, clarifyInfo, userRole],
   );
 
   return <LunaContext.Provider value={value}>{children}</LunaContext.Provider>;

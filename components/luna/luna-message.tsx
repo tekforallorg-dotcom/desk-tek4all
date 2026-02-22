@@ -9,7 +9,7 @@ import Link from "next/link";
 import type { LunaMessage } from "@/lib/luna/types";
 import { ActionCard } from "./action-card";
 import { useLuna } from "@/lib/luna/context";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, RotateCcw } from "lucide-react";
 
 const L = {
   surface2: "#222222",
@@ -18,13 +18,16 @@ const L = {
   muted: "#A0A0A0",
   dim: "#666666",
   linkHover: "#333333",
+  errorBg: "#1a1212",
+  errorBorder: "#3a2020",
 } as const;
 
 export function LunaMessageBubble({ message }: { message: LunaMessage }) {
-  const { close } = useLuna();
+  const { close, retryMessage } = useLuna();
   const isUser = message.role === "user";
   const hasItems = message.items && message.items.length > 0;
   const hasAction = !!message.action;
+  const isError = !!message.retryContent;
 
   return (
     <div className={`mb-2.5 flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -35,8 +38,8 @@ export function LunaMessageBubble({ message }: { message: LunaMessage }) {
             : "w-full rounded-bl-sm px-2 py-1.5"
         }`}
         style={{
-          backgroundColor: isUser ? L.surface2 : "transparent",
-          border: isUser ? "none" : `1px solid ${L.border}`,
+          backgroundColor: isUser ? L.surface2 : isError ? L.errorBg : "transparent",
+          border: isUser ? "none" : `1px solid ${isError ? L.errorBorder : L.border}`,
           color: L.text,
         }}
       >
@@ -45,6 +48,18 @@ export function LunaMessageBubble({ message }: { message: LunaMessage }) {
           {message.content}
         </p>
 
+        {/* Retry button for error messages */}
+        {isError && (
+          <button
+            onClick={() => retryMessage(message.id)}
+            className="mt-1.5 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+            style={{ color: L.muted, border: `1px solid ${L.border}` }}
+          >
+            <RotateCcw size={11} />
+            Retry
+          </button>
+        )
+      }
         {/* Deep-link result items */}
         {hasItems && (
           <div className="mt-1.5 space-y-0.5">

@@ -10,6 +10,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
+/** Gemini request timeout (ms) */
+const GEMINI_TIMEOUT_MS = 10_000;
+
+/** Max retries on transient Gemini failures */
+const GEMINI_MAX_RETRIES = 1;
+
 /* ── Types ── */
 
 export type LunaToolName =
@@ -141,23 +147,51 @@ User message: "${userMessage}"
 
 JSON:`;
 
-  try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+  // Retry loop with timeout
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
+    try {
+      // Timeout wrapper
+      const result = await Promise.race([
+        model.generateContent(prompt),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Gemini timeout")), GEMINI_TIMEOUT_MS)
+        ),
+      ]);
 
-    return {
-      tool: parsed.tool || "general_answer",
-      params: parsed.params || {},
-      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
-      missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
-      follow_up_question: parsed.follow_up_question || undefined,
-    };
-  } catch (error) {
-    console.error("Luna: Gemini error:", error);
-    return fallbackClassify(userMessage, history);
+      const text = result.response.text();
+      const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      return {
+        tool: parsed.tool || "general_answer",
+        params: parsed.params || {},
+        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+        missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
+        follow_up_question: parsed.follow_up_question || undefined,
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Luna: Gemini attempt ${attempt + 1} failed:`, error instanceof Error ? error.message : error);
+
+      // Only retry on transient errors (timeout, network), not parse errors
+      const isTransient =
+        error instanceof Error &&
+        (error.message.includes("timeout") ||
+          error.message.includes("fetch") ||
+          error.message.includes("network") ||
+          error.message.includes("503") ||
+          error.message.includes("429"));
+
+      if (!isTransient || attempt >= GEMINI_MAX_RETRIES) break;
+
+      // Brief backoff before retry
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
   }
+
+  console.error("Luna: Gemini failed after retries, using fallback:", lastError);
+  return fallbackClassify(userMessage, history);
 }
 
 /* ── Fallback Classifier ── */

@@ -62,6 +62,9 @@ const TOOLS: Record<LunaToolName, ToolFn> = {
   run_playbook: handleRunPlaybook,
 };
 
+/** Tool execution timeout (ms) */
+const TOOL_TIMEOUT_MS = 15_000;
+
 export async function executeTool(
   toolName: LunaToolName,
   supabase: SupabaseClient,
@@ -74,10 +77,22 @@ export async function executeTool(
   }
 
   try {
-    return await fn(supabase, userId, params);
+    const result = await Promise.race([
+      fn(supabase, userId, params),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Tool execution timeout")), TOOL_TIMEOUT_MS)
+      ),
+    ]);
+    return result;
   } catch (error) {
     console.error(`Luna tool error (${toolName}):`, error);
-    return { text: "Something went wrong running that query. Please try again.", items: [] };
+    const isTimeout = error instanceof Error && error.message.includes("timeout");
+    return {
+      text: isTimeout
+        ? "That took too long — please try again in a moment."
+        : "Something went wrong running that query. Please try again.",
+      items: [],
+    };
   }
 }
 
