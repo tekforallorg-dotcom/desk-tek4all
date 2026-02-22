@@ -349,3 +349,27 @@
 .dark .shadow-retro-lg {
   box-shadow: 5px 5px 0 0 hsl(0 0% 30%);
 }
+/* Luna Assistant — Iteration 1 */
+
+@keyframes luna-twinkle {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.luna-twinkle {
+  animation: luna-twinkle 2.4s ease-in-out infinite;
+}
+
+.luna-chips-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.luna-chips-scroll::-webkit-scrollbar {
+  display: none;
+}
