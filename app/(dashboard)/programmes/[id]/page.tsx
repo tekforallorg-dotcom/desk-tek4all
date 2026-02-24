@@ -423,7 +423,7 @@ export default function ProgrammeDetailPage() {
   const statusLabel = PROGRAMME_STATUS_LABELS[programme.status];
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4 overflow-x-hidden sm:space-y-6">
       {/* Header — mobile-friendly stacked layout */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2">
@@ -458,7 +458,7 @@ export default function ProgrammeDetailPage() {
         </div>
         <div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="warp-break-word text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {programme.name}
             </h1>
             <span
@@ -481,14 +481,14 @@ export default function ProgrammeDetailPage() {
       {/* Content */}
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Main Info */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+        <div className="min-w-0 lg:col-span-2 space-y-4 sm:space-y-6">
           {/* Description */}
-          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
+          <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="flex items-center gap-2 text-lg font-bold text-card-foreground">
               <span className="inline-block h-2 w-2 rounded-full bg-foreground" />
               Description
             </h2>
-            <p className="mt-4 whitespace-pre-wrap text-sm text-muted-foreground sm:text-base">
+            <p className="mt-4 whitespace-pre-wrap wrap-break-word text-sm text-muted-foreground sm:text-base">
               {programme.description || "No description provided."}
             </p>
           </div>
@@ -634,7 +634,7 @@ export default function ProgrammeDetailPage() {
         </div>
 
         {/* Sidebar */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4 lg:grid-cols-1 lg:gap-6">
+        <div className="min-w-0 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4 lg:grid-cols-1 lg:gap-6">
           {/* Details */}
           <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="text-lg font-bold text-card-foreground">Details</h2>

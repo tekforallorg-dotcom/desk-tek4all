@@ -834,7 +834,7 @@ export default function TaskDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-3xl space-y-6 overflow-x-hidden">
         <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
         <div className="h-64 animate-pulse rounded-2xl border-2 border-border bg-card" />
       </div>
@@ -862,7 +862,7 @@ export default function TaskDetailPage() {
     task.status === "in_progress" && task.review_notes && task.reviewed_at;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">
+    <div className="mx-auto max-w-3xl space-y-4 overflow-x-hidden sm:space-y-6">
       {/* Header — mobile: back+actions row, then title+badges row */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -895,7 +895,7 @@ export default function TaskDetailPage() {
           )}
         </div>
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          <h1 className="wrap-break-word text-xl font-bold tracking-tight text-foreground sm:text-2xl">
             {task.title}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -931,11 +931,11 @@ export default function TaskDetailPage() {
 
       <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Main Content */}
-        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-4 sm:space-y-6 lg:col-span-2">
           {/* Description */}
-          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
+          <div className="overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="font-bold">Description</h2>
-            <p className="mt-3 whitespace-pre-wrap font-mono text-sm text-muted-foreground">
+            <p className="mt-3 whitespace-pre-wrap wrap-break-word font-mono text-sm text-muted-foreground">
               {task.description || "No description provided."}
             </p>
           </div>
@@ -1467,7 +1467,7 @@ export default function TaskDetailPage() {
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-4 sm:space-y-6">
+        <div className="min-w-0 space-y-4 sm:space-y-6">
           {/* Assignees */}
           <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <div className="flex items-center justify-between">
