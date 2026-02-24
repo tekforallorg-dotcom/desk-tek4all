@@ -1,3 +1,6 @@
+// DESTINATION: app/(dashboard)/programmes/[id]/page.tsx
+// WHY: Programme detail — mobile-responsive header, team management, activity, stakeholders
+
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -23,6 +26,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Programme } from "@/lib/types/programme";
 import { PROGRAMME_STATUS_LABELS } from "@/lib/types/programme";
 import { useAuth } from "@/lib/auth";
+import { ProgrammeStakeholders } from "@/components/crm/programme-stakeholders";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -422,22 +426,22 @@ export default function ProgrammeDetailPage() {
     <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
       {/* Header — mobile-friendly stacked layout */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <Link href="/programmes">
             <Button
               variant="outline"
               size="icon"
-              className="border-2 shadow-retro-sm"
+              className="shrink-0 border-2 shadow-retro-sm"
             >
               <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
             </Button>
           </Link>
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Link href={`/programmes/${programme.id}/edit`}>
               <Button variant="outline" size="sm" className="border-2 shadow-retro-sm">
-                <Edit className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                Edit
+                <Edit className="h-4 w-4 sm:mr-2" strokeWidth={1.5} />
+                <span className="hidden sm:inline">Edit</span>
               </Button>
             </Link>
             <Button
@@ -691,7 +695,7 @@ export default function ProgrammeDetailPage() {
                   size="sm"
                   onClick={fetchMembers}
                   disabled={isRefreshingMembers}
-                  className="border-2 text-xs shadow-retro-sm h-8 w-8 p-0"
+                  className="h-8 w-8 border-2 p-0 shadow-retro-sm"
                   title="Refresh members"
                 >
                   <RefreshCw className={`h-3 w-3 ${isRefreshingMembers ? "animate-spin" : ""}`} strokeWidth={1.5} />
@@ -702,8 +706,8 @@ export default function ProgrammeDetailPage() {
                   onClick={() => setShowManageMembers(true)}
                   className="border-2 text-xs shadow-retro-sm"
                 >
-                  <Users className="mr-1 h-3 w-3" strokeWidth={1.5} />
-                  Manage
+                  <Users className="h-3 w-3 sm:mr-1" strokeWidth={1.5} />
+                  <span className="hidden sm:inline">Manage</span>
                 </Button>
               </div>
             </div>
@@ -745,6 +749,8 @@ export default function ProgrammeDetailPage() {
               </div>
             )}
           </div>
+          {/* Stakeholders */}
+          <ProgrammeStakeholders programmeId={programme.id} />
         </div>
       </div>
 
@@ -767,12 +773,12 @@ export default function ProgrammeDetailPage() {
             className="absolute inset-0 bg-foreground/60"
             onClick={() => { setShowManageMembers(false); setSelectedMemberIds([]); }}
           />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
-            <h2 className="text-xl font-bold">Add Team Members</h2>
+          <div className="relative z-10 flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro-lg sm:p-6">
+            <h2 className="text-lg font-bold sm:text-xl">Add Team Members</h2>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
               Select people to add to {programme.name}.
             </p>
-            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+            <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
               {availableUsers.length === 0 ? (
                 <p className="py-4 text-center font-mono text-sm text-muted-foreground">
                   All team members have been added.
@@ -822,7 +828,7 @@ export default function ProgrammeDetailPage() {
                 })
               )}
             </div>
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
               <span className="font-mono text-xs text-muted-foreground">
                 {selectedMemberIds.length} selected
               </span>

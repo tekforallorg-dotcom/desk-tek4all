@@ -1,3 +1,7 @@
+// DESTINATION: components/layout/sidebar.tsx
+// CHANGE: Added CRM (Handshake icon) and Opportunity Radar (Radar icon) nav items after Check-ins
+// WHY: Phase 3 navigation — CRM for stakeholder management, Radar for funding intelligence
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,7 +13,6 @@ import {
   CheckSquare,
   MessageSquare,
   Mail,
-  Shield,
   Settings,
   TowerControl,
   Moon,
@@ -17,10 +20,12 @@ import {
   Users,
   ClipboardCheck,
   Activity,
-  CalendarDays, 
+  CalendarDays,
   BarChart3,
   FileDown,
   HardDrive,
+  Handshake,
+  Radar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -59,6 +64,16 @@ const navigation = [
     icon: ClipboardCheck,
   },
   {
+    name: "CRM",
+    href: "/crm",
+    icon: Handshake,
+  },
+  {
+    name: "Opp. Radar",
+    href: "/radar",
+    icon: Radar,
+  },
+  {
     name: "Calendar",
     href: "/calendar",
     icon: CalendarDays,
@@ -90,11 +105,10 @@ const navigation = [
     icon: TowerControl,
   },
   {
-  name: "Reports",
-  href: "/reports",
-  icon: FileDown,  // import from lucide-react
-},
-
+    name: "Reports",
+    href: "/reports",
+    icon: FileDown,
+  },
 ];
 
 interface SidebarProps {
@@ -248,7 +262,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <Settings className="h-5 w-5" strokeWidth={1.5} />
             Settings
           </Link>
-          
+
           <div className="mt-4 px-3 text-center">
             <p className="font-mono text-[9px] uppercase tracking-widest text-sidebar-foreground/30">
               © 2026 Tek4All

@@ -1,3 +1,6 @@
+// DESTINATION: app/(dashboard)/tasks/[id]/page.tsx
+// WHY: Task detail — mobile-responsive header, evidence, dependencies, assignees
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -186,7 +189,6 @@ export default function TaskDetailPage() {
   const isAssignee = assignees.some((a) => a.user_id === user?.id);
 
   // Check if user can edit: creator OR admin/super_admin only
-  // Managers can only edit tasks THEY created
   const canEdit =
     profile?.role === "admin" ||
     profile?.role === "super_admin" ||
@@ -462,7 +464,7 @@ export default function TaskDetailPage() {
       },
       ...updates,
     ]);
-    
+
     // Notify task participants about comment
     fetch(`/api/tasks/${taskId}/notify`, {
       method: "POST",
@@ -860,78 +862,78 @@ export default function TaskDetailPage() {
     task.status === "in_progress" && task.review_notes && task.reviewed_at;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
+    <div className="mx-auto max-w-3xl space-y-4 sm:space-y-6">
+      {/* Header — mobile: back+actions row, then title+badges row */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
           <Link href="/tasks">
             <Button
               variant="outline"
               size="icon"
-              className="border-2 shadow-retro-sm"
+              className="shrink-0 border-2 shadow-retro-sm"
             >
               <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
             </Button>
           </Link>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {task.title}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span
-                className={`rounded-full border-2 px-3 py-1 font-mono text-xs font-medium ${
-                  STATUS_COLORS[task.status] || STATUS_COLORS.todo
-                }`}
+          {canEdit && (
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <Link href={`/tasks/${taskId}/edit`}>
+                <Button variant="outline" size="sm" className="border-2 shadow-retro-sm">
+                  <Edit className="h-4 w-4 sm:mr-2" strokeWidth={1.5} />
+                  <span className="hidden sm:inline">Edit</span>
+                </Button>
+              </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="border-2 border-red-200 text-red-600 shadow-retro-sm hover:bg-red-50"
               >
-                {STATUS_LABELS[task.status] || task.status}
-              </span>
-              <span
-                className={`rounded-full border-2 px-3 py-1 font-mono text-xs font-medium ${
-                  PRIORITY_COLORS[task.priority]
-                }`}
-              >
-                {task.priority}
-              </span>
-              {task.evidence_required && (
-                <span className="flex items-center gap-1 rounded-full border-2 border-foreground bg-muted px-3 py-1 font-mono text-xs font-medium text-foreground">
-                  <FileCheck className="h-3 w-3" />
-                  Evidence Required
-                </span>
-              )}
-              {isBlockedByDependencies && (
-                <span className="flex items-center gap-1 rounded-full border-2 border-red-300 bg-red-100 px-3 py-1 font-mono text-xs font-medium text-red-700">
-                  <Lock className="h-3 w-3" />
-                  Blocked
-                </span>
-              )}
+                <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+              </Button>
             </div>
+          )}
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {task.title}
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span
+              className={`rounded-full border-2 px-2.5 py-0.5 font-mono text-[10px] font-medium sm:px-3 sm:py-1 sm:text-xs ${
+                STATUS_COLORS[task.status] || STATUS_COLORS.todo
+              }`}
+            >
+              {STATUS_LABELS[task.status] || task.status}
+            </span>
+            <span
+              className={`rounded-full border-2 px-2.5 py-0.5 font-mono text-[10px] font-medium sm:px-3 sm:py-1 sm:text-xs ${
+                PRIORITY_COLORS[task.priority]
+              }`}
+            >
+              {task.priority}
+            </span>
+            {task.evidence_required && (
+              <span className="flex items-center gap-1 rounded-full border-2 border-foreground bg-muted px-2.5 py-0.5 font-mono text-[10px] font-medium text-foreground sm:px-3 sm:py-1 sm:text-xs">
+                <FileCheck className="h-3 w-3" />
+                <span className="hidden xs:inline">Evidence</span>
+              </span>
+            )}
+            {isBlockedByDependencies && (
+              <span className="flex items-center gap-1 rounded-full border-2 border-red-300 bg-red-100 px-2.5 py-0.5 font-mono text-[10px] font-medium text-red-700 sm:px-3 sm:py-1 sm:text-xs">
+                <Lock className="h-3 w-3" />
+                Blocked
+              </span>
+            )}
           </div>
         </div>
-
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <Link href={`/tasks/${taskId}/edit`}>
-              <Button variant="outline" className="border-2 shadow-retro-sm">
-                <Edit className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                Edit
-              </Button>
-            </Link>
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="border-2 border-red-200 text-red-600 shadow-retro-sm hover:bg-red-50"
-            >
-              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
-            </Button>
-          </div>
-        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-3">
         {/* Main Content */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
           {/* Description */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="font-bold">Description</h2>
             <p className="mt-3 whitespace-pre-wrap font-mono text-sm text-muted-foreground">
               {task.description || "No description provided."}
@@ -940,7 +942,7 @@ export default function TaskDetailPage() {
 
           {/* Dependencies Section */}
           {(dependenciesData?.dependencies.length || dependenciesData?.dependents.length || canEdit) && (
-            <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+            <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Link2 className="h-5 w-5 text-foreground" />
@@ -960,9 +962,9 @@ export default function TaskDetailPage() {
 
               {/* Blocked Warning */}
               {isBlockedByDependencies && (
-                <div className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 p-4">
+                <div className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 p-3 sm:p-4">
                   <div className="flex items-start gap-3">
-                    <Lock className="mt-0.5 h-5 w-5 text-red-500" />
+                    <Lock className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
                     <div>
                       <p className="font-medium text-red-700">
                         Blocked by {dependenciesData?.incompleteCount} incomplete task
@@ -979,33 +981,33 @@ export default function TaskDetailPage() {
               {/* This task depends on (blockers) */}
               {dependenciesData && dependenciesData.dependencies.length > 0 && (
                 <div className="mt-4">
-                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wide">
+                  <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
                     This task depends on
                   </p>
                   <div className="mt-2 space-y-2">
                     {dependenciesData.dependencies.map((dep) => (
                       <div
                         key={dep.dependency_id}
-                        className={`flex items-center justify-between rounded-xl border-2 p-3 ${
+                        className={`flex items-center justify-between gap-2 rounded-xl border-2 p-2.5 sm:p-3 ${
                           dep.task.status === "done"
                             ? "border-green-200 bg-green-50"
                             : "border-amber-200 bg-amber-50"
                         }`}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                           {dep.task.status === "done" ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
                           ) : (
-                            <AlertCircle className="h-4 w-4 text-amber-600" />
+                            <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
                           )}
                           <Link
                             href={`/tasks/${dep.task.id}`}
-                            className="font-medium hover:underline"
+                            className="min-w-0 truncate font-medium hover:underline"
                           >
                             {dep.task.title}
                           </Link>
                           <span
-                            className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
+                            className={`hidden shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] sm:inline ${
                               dep.task.status === "done"
                                 ? "bg-green-200 text-green-700"
                                 : "bg-amber-200 text-amber-700"
@@ -1017,7 +1019,7 @@ export default function TaskDetailPage() {
                         {canEdit && (
                           <button
                             onClick={() => handleRemoveDependency(dep.dependency_id)}
-                            className="text-muted-foreground hover:text-red-500"
+                            className="shrink-0 text-muted-foreground hover:text-red-500"
                           >
                             <X className="h-4 w-4" />
                           </button>
@@ -1031,23 +1033,23 @@ export default function TaskDetailPage() {
               {/* Tasks that depend on this task */}
               {dependenciesData && dependenciesData.dependents.length > 0 && (
                 <div className="mt-4">
-                  <p className="font-mono text-xs text-muted-foreground uppercase tracking-wide">
+                  <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
                     Tasks blocked by this
                   </p>
                   <div className="mt-2 space-y-2">
                     {dependenciesData.dependents.map((dep) => (
                       <div
                         key={dep.dependency_id}
-                        className="flex items-center gap-3 rounded-xl border-2 border-border bg-muted/30 p-3"
+                        className="flex min-w-0 items-center gap-2 rounded-xl border-2 border-border bg-muted/30 p-2.5 sm:gap-3 sm:p-3"
                       >
-                        <Lock className="h-4 w-4 text-muted-foreground" />
+                        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <Link
                           href={`/tasks/${dep.task.id}`}
-                          className="font-medium hover:underline"
+                          className="min-w-0 truncate font-medium hover:underline"
                         >
                           {dep.task.title}
                         </Link>
-                        <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        <span className="hidden shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
                           {STATUS_LABELS[dep.task.status] || dep.task.status}
                         </span>
                       </div>
@@ -1067,17 +1069,17 @@ export default function TaskDetailPage() {
             </div>
           )}
 
-            {/* Attachments Section */}
-<TaskAttachments
-  entityType="task"
-  entityId={task.id}
-  canAdd={isAssignee || canEdit}
-  canRemove={canEdit}
-/>
+          {/* Attachments Section */}
+          <TaskAttachments
+            entityType="task"
+            entityId={task.id}
+            canAdd={isAssignee || canEdit}
+            canRemove={canEdit}
+          />
 
           {/* Evidence Section */}
           {(task.evidence_required || showPendingReview) && (
-            <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+            <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
               <div className="flex items-center gap-2">
                 <FileCheck className="h-5 w-5 text-foreground" />
                 <h2 className="font-bold">Evidence</h2>
@@ -1085,10 +1087,10 @@ export default function TaskDetailPage() {
 
               {/* Rejection Feedback */}
               {showRejectionFeedback && (
-                <div className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 p-4">
+                <div className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 p-3 sm:p-4">
                   <div className="flex items-start gap-3">
-                    <XCircle className="mt-0.5 h-5 w-5 text-red-500" />
-                    <div>
+                    <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+                    <div className="min-w-0">
                       <p className="font-medium text-red-700">Evidence Rejected</p>
                       <p className="mt-1 font-mono text-sm text-red-600">
                         {task.review_notes}
@@ -1107,9 +1109,9 @@ export default function TaskDetailPage() {
 
               {/* Guidance for To Do status */}
               {task.evidence_required && task.status === "todo" && isAssignee && (
-                <div className="mt-4 rounded-xl border-2 border-border bg-muted/50 p-4">
+                <div className="mt-4 rounded-xl border-2 border-border bg-muted/50 p-3 sm:p-4">
                   <p className="font-mono text-sm text-muted-foreground">
-                    Change status to <strong>"In Progress"</strong> above, then
+                    Change status to <strong>&ldquo;In Progress&rdquo;</strong> above, then
                     submit your evidence here.
                   </p>
                 </div>
@@ -1117,37 +1119,37 @@ export default function TaskDetailPage() {
 
               {/* Submit Evidence Form */}
               {task.evidence_required &&
-  task.status === "in_progress" &&
-  isAssignee &&
-  !isBlockedByDependencies && (
-    <EvidenceSubmission
-      taskId={taskId}
-      onSubmitSuccess={(link, notes) => {
-        setTask((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: "pending_review",
-                evidence_link: link,
-                evidence_notes: notes,
-                evidence_submitted_at: new Date().toISOString(),
-                evidence_submitted_by: user?.id || null,
-              }
-            : null
-        );
-        setEditStatus("pending_review");
-      }}
-    />
-  )}
+                task.status === "in_progress" &&
+                isAssignee &&
+                !isBlockedByDependencies && (
+                  <EvidenceSubmission
+                    taskId={taskId}
+                    onSubmitSuccess={(link, notes) => {
+                      setTask((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              status: "pending_review",
+                              evidence_link: link,
+                              evidence_notes: notes,
+                              evidence_submitted_at: new Date().toISOString(),
+                              evidence_submitted_by: user?.id || null,
+                            }
+                          : null
+                      );
+                      setEditStatus("pending_review");
+                    }}
+                  />
+                )}
 
               {/* Blocked by dependencies - can't submit evidence */}
               {task.evidence_required &&
                 task.status === "in_progress" &&
                 isAssignee &&
                 isBlockedByDependencies && (
-                  <div className="mt-4 rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+                  <div className="mt-4 rounded-xl border-2 border-amber-200 bg-amber-50 p-3 sm:p-4">
                     <div className="flex items-start gap-3">
-                      <Lock className="mt-0.5 h-5 w-5 text-amber-600" />
+                      <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                       <p className="font-mono text-sm text-amber-700">
                         Complete all dependencies before submitting evidence.
                       </p>
@@ -1158,9 +1160,9 @@ export default function TaskDetailPage() {
               {/* Pending Review Display */}
               {showPendingReview && (
                 <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 sm:p-4">
                     <div className="flex items-start gap-3">
-                      <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                       <div className="flex-1">
                         <p className="font-medium text-amber-700">Awaiting Review</p>
                         <p className="mt-1 font-mono text-sm text-amber-600">
@@ -1171,7 +1173,7 @@ export default function TaskDetailPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border-2 border-border p-4">
+                  <div className="rounded-xl border-2 border-border p-3 sm:p-4">
                     <p className="font-mono text-xs text-muted-foreground">
                       Submitted Evidence
                     </p>
@@ -1181,7 +1183,7 @@ export default function TaskDetailPage() {
                       rel="noopener noreferrer"
                       className="mt-1 flex items-start gap-2 font-medium text-blue-600 hover:underline"
                     >
-                      <ExternalLink className="h-4 w-4 shrink-0 mt-0.5" />
+                      <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
                       <span className="break-all">{task.evidence_link}</span>
                     </a>
                     {task.evidence_notes && (
@@ -1195,7 +1197,7 @@ export default function TaskDetailPage() {
                   {showReviewActions && (
                     <div className="space-y-3">
                       {!showRejectForm ? (
-                        <div className="flex gap-3">
+                        <div className="flex gap-2 sm:gap-3">
                           <Button
                             onClick={() => handleReview("approve")}
                             disabled={isReviewing}
@@ -1204,7 +1206,7 @@ export default function TaskDetailPage() {
                             {isReviewing ? (
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             ) : (
-                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                              <CheckCircle2 className="mr-1 h-4 w-4 sm:mr-2" />
                             )}
                             Approve
                           </Button>
@@ -1214,32 +1216,33 @@ export default function TaskDetailPage() {
                             variant="outline"
                             className="flex-1 border-2 border-red-200 text-red-600 hover:bg-red-50"
                           >
-                            <XCircle className="mr-2 h-4 w-4" />
+                            <XCircle className="mr-1 h-4 w-4 sm:mr-2" />
                             Reject
                           </Button>
                         </div>
                       ) : (
-                        <div className="space-y-3 rounded-xl border-2 border-red-200 bg-red-50 p-4">
+                        <div className="space-y-3 rounded-xl border-2 border-red-200 bg-red-50 p-3 sm:p-4">
                           <p className="font-medium text-red-700">Reject Evidence</p>
                           <textarea
                             value={reviewNotes}
                             onChange={(e) => setReviewNotes(e.target.value)}
                             placeholder="Explain why the evidence is being rejected..."
                             rows={2}
-                            className="w-full rounded-xl border-2 border-red-200 bg-white px-4 py-3 font-mono text-sm focus:outline-none"
+                            className="w-full rounded-xl border-2 border-red-200 bg-white px-3 py-2 font-mono text-sm focus:outline-none sm:px-4 sm:py-3"
                           />
                           <div className="flex gap-2">
                             <Button
                               onClick={() => handleReview("reject")}
                               disabled={isReviewing || !reviewNotes.trim()}
+                              size="sm"
                               className="border-2 border-red-600 bg-red-600 text-white hover:bg-red-700"
                             >
                               {isReviewing ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                               ) : (
-                                <XCircle className="mr-2 h-4 w-4" />
+                                <XCircle className="mr-1 h-4 w-4 sm:mr-2" />
                               )}
-                              Confirm Reject
+                              Confirm
                             </Button>
                             <Button
                               onClick={() => {
@@ -1247,6 +1250,7 @@ export default function TaskDetailPage() {
                                 setReviewNotes("");
                               }}
                               variant="outline"
+                              size="sm"
                               className="border-2"
                             >
                               Cancel
@@ -1261,7 +1265,7 @@ export default function TaskDetailPage() {
                   {task.status === "pending_review" &&
                     task.evidence_submitted_by === user?.id &&
                     !canReview && (
-                      <div className="rounded-xl border-2 border-border bg-muted/50 p-4">
+                      <div className="rounded-xl border-2 border-border bg-muted/50 p-3 sm:p-4">
                         <p className="font-mono text-sm text-muted-foreground">
                           You submitted this evidence. The task creator or your
                           manager will review it.
@@ -1274,9 +1278,9 @@ export default function TaskDetailPage() {
               {/* Completed with evidence */}
               {task.status === "done" && task.evidence_link && (
                 <div className="mt-4 space-y-3">
-                  <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
+                  <div className="rounded-xl border-2 border-green-200 bg-green-50 p-3 sm:p-4">
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600" />
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
                       <div>
                         <p className="font-medium text-green-700">
                           Evidence Approved
@@ -1291,7 +1295,7 @@ export default function TaskDetailPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-xl border-2 border-border p-4">
+                  <div className="rounded-xl border-2 border-border p-3 sm:p-4">
                     <p className="font-mono text-xs text-muted-foreground">
                       Submitted Evidence
                     </p>
@@ -1314,7 +1318,7 @@ export default function TaskDetailPage() {
           <Subtasks taskId={task.id} />
 
           {/* Quick Edit */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="font-bold">Quick Update</h2>
               {isEditing && (
@@ -1357,7 +1361,7 @@ export default function TaskDetailPage() {
                     setIsEditing(true);
                   }}
                   disabled={isBlockedByDependencies && task.status !== "blocked"}
-                  className="w-full rounded-xl border-2 border-border bg-background px-4 py-2 font-mono text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full rounded-xl border-2 border-border bg-background px-3 py-2 font-mono text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
                 >
                   <option value="todo">To Do</option>
                   <option value="in_progress">In Progress</option>
@@ -1390,7 +1394,7 @@ export default function TaskDetailPage() {
                     setEditPriority(e.target.value);
                     setIsEditing(true);
                   }}
-                  className="w-full rounded-xl border-2 border-border bg-background px-4 py-2 font-mono text-sm"
+                  className="w-full rounded-xl border-2 border-border bg-background px-3 py-2 font-mono text-sm sm:px-4"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -1402,7 +1406,7 @@ export default function TaskDetailPage() {
           </div>
 
           {/* Activity */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="font-bold">Activity</h2>
 
             <div className="mt-4">
@@ -1411,7 +1415,7 @@ export default function TaskDetailPage() {
                 onChange={(e) => setNewUpdate(e.target.value)}
                 placeholder="Add an update or comment..."
                 rows={2}
-                className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 font-mono text-sm shadow-retro-sm focus:outline-none"
+                className="w-full rounded-xl border-2 border-border bg-background px-3 py-2 font-mono text-sm shadow-retro-sm focus:outline-none sm:px-4 sm:py-3"
               />
               <div className="mt-2 flex justify-end">
                 <Button
@@ -1420,8 +1424,8 @@ export default function TaskDetailPage() {
                   disabled={!newUpdate.trim() || isPostingUpdate}
                   className="border-2 border-foreground bg-foreground text-background"
                 >
-                  <Send className="mr-2 h-4 w-4" />
-                  {isPostingUpdate ? "Posting..." : "Post Update"}
+                  <Send className="mr-1 h-4 w-4 sm:mr-2" />
+                  {isPostingUpdate ? "Posting..." : "Post"}
                 </Button>
               </div>
             </div>
@@ -1441,15 +1445,15 @@ export default function TaskDetailPage() {
                       {getInitials(update.user.full_name, update.user.username)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1 sm:gap-2">
                         <p className="text-sm font-medium">
                           {update.user.full_name || update.user.username}
                         </p>
-                        <span className="font-mono text-xs text-muted-foreground">
+                        <span className="font-mono text-[10px] text-muted-foreground sm:text-xs">
                           {formatTime(update.created_at)}
                         </span>
                       </div>
-                      <p className="mt-1 font-mono text-sm text-muted-foreground">
+                      <p className="mt-1 wrap-break-word font-mono text-sm text-muted-foreground">
                         {update.content}
                       </p>
                     </div>
@@ -1463,9 +1467,9 @@ export default function TaskDetailPage() {
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Assignees */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="font-bold">Assignees</h2>
               <Button
@@ -1488,14 +1492,14 @@ export default function TaskDetailPage() {
                     key={assignee.id}
                     className="flex items-center justify-between rounded-lg border-2 border-border p-2"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-muted font-mono text-[10px]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted font-mono text-[10px]">
                         {getInitials(
                           assignee.user.full_name,
                           assignee.user.username
                         )}
                       </div>
-                      <span className="text-sm font-medium">
+                      <span className="min-w-0 truncate text-sm font-medium">
                         {assignee.user.full_name || assignee.user.username}
                       </span>
                     </div>
@@ -1503,7 +1507,7 @@ export default function TaskDetailPage() {
                       onClick={() =>
                         handleRemoveAssignee(assignee.id, assignee.user)
                       }
-                      className="text-muted-foreground hover:text-red-500"
+                      className="shrink-0 text-muted-foreground hover:text-red-500"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -1514,16 +1518,16 @@ export default function TaskDetailPage() {
           </div>
 
           {/* Details */}
-          <div className="rounded-2xl border-2 border-border bg-card p-6 shadow-retro">
+          <div className="rounded-2xl border-2 border-border bg-card p-4 shadow-retro sm:p-6">
             <h2 className="font-bold">Details</h2>
             <div className="mt-4 space-y-4">
               <div className="flex items-center gap-3">
-                <User className="h-4 w-4 text-muted-foreground" />
-                <div>
+                <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
                   <p className="font-mono text-xs text-muted-foreground">
                     Created by
                   </p>
-                  <p className="text-sm font-medium">
+                  <p className="truncate text-sm font-medium">
                     {task.creator?.full_name ||
                       task.creator?.username ||
                       "Unknown"}
@@ -1533,7 +1537,7 @@ export default function TaskDetailPage() {
 
               {task.due_date && (
                 <div className="flex items-center gap-3">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <div>
                     <p className="font-mono text-xs text-muted-foreground">
                       Due date
@@ -1547,14 +1551,14 @@ export default function TaskDetailPage() {
 
               {task.programme && (
                 <div className="flex items-center gap-3">
-                  <FolderKanban className="h-4 w-4 text-muted-foreground" />
-                  <div>
+                  <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
                     <p className="font-mono text-xs text-muted-foreground">
                       Programme
                     </p>
                     <Link
                       href={`/programmes/${task.programme.id}`}
-                      className="text-sm font-medium hover:underline"
+                      className="block truncate text-sm font-medium hover:underline"
                     >
                       {task.programme.name}
                     </Link>
@@ -1563,7 +1567,7 @@ export default function TaskDetailPage() {
               )}
 
               <div className="flex items-center gap-3">
-                <Clock className="h-4 w-4 text-muted-foreground" />
+                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="font-mono text-xs text-muted-foreground">
                     Created
@@ -1597,13 +1601,13 @@ export default function TaskDetailPage() {
             className="absolute inset-0 bg-foreground/60"
             onClick={() => setShowAddAssignee(false)}
           />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
-            <h2 className="text-xl font-bold">Add Assignee</h2>
+          <div className="relative z-10 flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro-lg sm:p-6">
+            <h2 className="text-lg font-bold sm:text-xl">Add Assignee</h2>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
               Select someone to assign to this task.
             </p>
 
-            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+            <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
               {availableUsers.length === 0 ? (
                 <p className="py-4 text-center text-muted-foreground">
                   Everyone is already assigned.
@@ -1615,13 +1619,13 @@ export default function TaskDetailPage() {
                     onClick={() => handleAddAssignee(u.id)}
                     className="flex w-full items-center gap-3 rounded-xl border-2 border-border p-3 text-left transition-all hover:border-foreground"
                   >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-muted font-mono text-xs">
                       {getInitials(u.full_name, u.username)}
                     </div>
-                    <div>
-                      <p className="font-medium">{u.full_name || u.username}</p>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{u.full_name || u.username}</p>
                       {u.email && (
-                        <p className="font-mono text-xs text-muted-foreground">
+                        <p className="truncate font-mono text-xs text-muted-foreground">
                           {u.email}
                         </p>
                       )}
@@ -1631,7 +1635,7 @@ export default function TaskDetailPage() {
               )}
             </div>
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-end border-t border-border pt-4">
               <Button
                 variant="outline"
                 onClick={() => setShowAddAssignee(false)}
@@ -1655,8 +1659,8 @@ export default function TaskDetailPage() {
               setDependencyError("");
             }}
           />
-          <div className="relative z-10 w-full max-w-md rounded-2xl border-2 border-border bg-card p-6 shadow-retro-lg">
-            <h2 className="text-xl font-bold">Add Dependency</h2>
+          <div className="relative z-10 flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border-2 border-border bg-card p-4 shadow-retro-lg sm:p-6">
+            <h2 className="text-lg font-bold sm:text-xl">Add Dependency</h2>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
               Select a task that must be completed before this one.
             </p>
@@ -1680,7 +1684,7 @@ export default function TaskDetailPage() {
               </div>
             </div>
 
-            <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+            <div className="mt-4 flex-1 space-y-2 overflow-y-auto">
               {filteredTasksForDependency.length === 0 ? (
                 <p className="py-4 text-center text-muted-foreground">
                   {dependencySearch
@@ -1693,18 +1697,18 @@ export default function TaskDetailPage() {
                     key={t.id}
                     onClick={() => handleAddDependency(t.id)}
                     disabled={isAddingDependency}
-                    className="flex w-full items-center justify-between rounded-xl border-2 border-border p-3 text-left transition-all hover:border-foreground disabled:opacity-50"
+                    className="flex w-full items-center justify-between gap-2 rounded-xl border-2 border-border p-2.5 text-left transition-all hover:border-foreground disabled:opacity-50 sm:p-3"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                       {t.status === "done" ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
                       ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-600" />
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
                       )}
-                      <span className="font-medium">{t.title}</span>
+                      <span className="min-w-0 truncate font-medium">{t.title}</span>
                     </div>
                     <span
-                      className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
+                      className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] ${
                         t.status === "done"
                           ? "bg-green-100 text-green-700"
                           : "bg-amber-100 text-amber-700"
@@ -1717,7 +1721,7 @@ export default function TaskDetailPage() {
               )}
             </div>
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 flex justify-end border-t border-border pt-4">
               <Button
                 variant="outline"
                 onClick={() => {
